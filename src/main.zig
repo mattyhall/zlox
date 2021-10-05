@@ -3,9 +3,12 @@ const Allocator = std.mem.Allocator;
 
 const DEBUG_TRACE_EXECUTION = true;
 
+const MAX_STACK = 256;
+
 const OpCode = enum(u8) {
     ret,
     constant,
+    negate,
 };
 
 const Value = f32;
@@ -124,6 +127,10 @@ const Chunk = struct {
                 try stdout.print(" {s:<5} {} ({})\n", .{ "CONST", index, val });
                 return offset + 2;
             },
+            .negate => {
+              try stdout.print(" {s:<5}\n", .{"NEGATE"});
+              return offset + 1;
+            }
         }
     }
 
@@ -161,9 +168,41 @@ const InterpretError = error{
     runtime_error,
 };
 
+const Stack = struct {
+    data: [MAX_STACK]Value,
+    top: [*]Value,
+
+    const Self = @This();
+
+    fn reset(self: *Self) void {
+        self.top = &self.data;
+    }
+
+    fn push(self: *Self, value: Value) void {
+        self.top[0] = value;
+        self.top += 1;
+    }
+
+    fn pop(self: *Self) Value {
+        self.top -= 1;
+        return self.top[0];
+    }
+
+    fn debugPrint(self: *Self, stdout: anytype) !void {
+        var current: [*]Value = &self.data;
+        if (current == self.top) return;
+        try stdout.print("    ", .{});
+        while (current != self.top) : (current += 1) {
+            try stdout.print("[{}] ", .{current[0]});
+        }
+        try stdout.print("\n", .{});
+    }
+};
+
 const Vm = struct {
     chunk: ?*const Chunk,
     ip: [*]const u8,
+    stack: Stack,
 
     const Self = @This();
     const Error = if (DEBUG_TRACE_EXECUTION) anyerror else InterpretError;
@@ -172,7 +211,12 @@ const Vm = struct {
         return .{
             .chunk = null,
             .ip = @intToPtr([*]const u8, 0x8),
+            .stack = undefined,
         };
+    }
+
+    fn reset(self: *Self) void {
+        self.stack.reset();
     }
 
     inline fn readByte(self: *Self) u8 {
@@ -182,6 +226,8 @@ const Vm = struct {
     }
 
     fn run(self: *Self) Error!void {
+        self.stack.reset();
+
         const chunk = self.chunk.?;
 
         const stdout = std.io.getStdOut().writer();
@@ -198,16 +244,23 @@ const Vm = struct {
                     line = .{ .new = chunk.lines.data[line_offset].line };
                 }
                 const offset = @ptrToInt(self.ip) - @ptrToInt(chunk.code.data);
+                try self.stack.debugPrint(stdout);
                 _ = try chunk.disassembleInstruction(stdout, offset, line);
             }
 
             switch (@intToEnum(OpCode, self.readByte())) {
                 .constant => {
                     const index = self.readByte();
-                    const value = chunk.values.data[index];
-                    std.log.info("{}", .{value});
+                    self.stack.push(chunk.values.data[index]);
                 },
-                .ret => return,
+                .ret => {
+                    try stdout.print("{}\n", .{self.stack.pop()});
+                    return;
+                },
+                .negate => {
+                    const val = self.stack.pop();
+                    self.stack.push(-val);
+                },
             }
             first = false;
         }
@@ -228,10 +281,9 @@ pub fn main() anyerror!void {
     const constant = try chunk.addConstant(1.3);
     try chunk.writeChunk(@enumToInt(OpCode.constant), 123);
     try chunk.writeChunk(constant, 123);
+    try chunk.writeChunk(@enumToInt(OpCode.negate), 123);
     try chunk.writeChunk(@enumToInt(OpCode.ret), 123);
 
     var vm = Vm.init();
     try vm.interpret(&chunk);
-
-    // try chunk.disassemble("test chunk");
 }
