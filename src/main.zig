@@ -13,14 +13,64 @@ const LineInfo = struct {
     count: usize,
 };
 
+fn DynamicArray(comptime T: type) type {
+    return struct {
+        data: [*]T,
+        count: usize,
+        capacity: usize,
+
+        allocator: *Allocator,
+
+        const Self = @This();
+
+        fn init(allocator: *Allocator) Self {
+            return Self{
+                .allocator = allocator,
+                // Need an aligned address so chose 64
+                .data = @intToPtr([*]T, 0x40),
+                .count = 0,
+                .capacity = 0,
+            };
+        }
+
+        fn items(self: *Self) []T {
+            var s: []T = undefined;
+            s.ptr = self.data;
+            s.len = self.count;
+            return s;
+        }
+
+        fn slice(self: *Self) []T {
+            var s: []T = undefined;
+            s.ptr = self.data;
+            s.len = self.capacity;
+            return s;
+        }
+
+        fn append(self: *Self, v: T) !void {
+            if (self.capacity < self.count + 1) {
+                if (self.capacity == 0) {
+                    self.capacity = 8;
+                    self.data = (try self.allocator.alloc(T, 8)).ptr;
+                } else {
+                    self.capacity *= 2;
+                    self.data = (try self.allocator.realloc(self.slice(), self.capacity)).ptr;
+                }
+            }
+            self.data[self.count] = v;
+            self.count += 1;
+        }
+
+        fn deinit(self: *Self) void {
+          self.allocator.deinit(self.slice());
+        }
+    };
+}
+
 const Chunk = struct {
-    code: [*]u8,
-    count: usize,
-    capacity: usize,
-
-    values: std.ArrayList(Value),
-
-    lines: std.ArrayList(LineInfo),
+    code: DynamicArray(u8),
+    values: DynamicArray(Value),
+    lines: DynamicArray(LineInfo),
 
     allocator: *Allocator,
 
@@ -29,49 +79,28 @@ const Chunk = struct {
     fn init(allocator: *Allocator) Self {
         return Self{
             .allocator = allocator,
-            .code = @intToPtr([*]u8, 0xdeadbeef),
-            .count = 0,
-            .capacity = 0,
-            .values = std.ArrayList(Value).init(allocator),
-            .lines = std.ArrayList(LineInfo).init(allocator),
+            .code = DynamicArray(u8).init(allocator),
+            .values = DynamicArray(Value).init(allocator),
+            .lines = DynamicArray(LineInfo).init(allocator),
         };
     }
 
-    fn codeSlice(self: *Self) ?[]u8 {
-        if (self.count == 0)
-            return null;
-        var res: []u8 = undefined;
-        res.ptr = self.code;
-        res.len = self.count;
-        return res;
-    }
-
     fn addConstant(self: *Self, val: Value) !u8 {
-        if (self.values.items.len == 256)
+        if (self.values.count == 256)
             return error.TooManyConstants;
 
         try self.values.append(val);
-        return @intCast(u8, self.values.items.len - 1);
+        return @intCast(u8, self.values.count - 1);
     }
 
     fn writeChunk(self: *Self, byte: u8, line: usize) !void {
-        if (self.capacity < self.count + 1) {
-            if (self.capacity == 0) {
-                self.capacity = 8;
-                self.code = (try self.allocator.alloc(u8, 8)).ptr;
-            } else {
-                self.capacity *= 2;
-                self.code = (try self.allocator.realloc(self.codeSlice() orelse unreachable, self.capacity)).ptr;
-            }
-        }
-        const line_infos = self.lines.items.len;
-        if (line_infos == 0 or self.lines.items[self.lines.items.len - 1].line != line) {
+        const line_infos = self.lines.count;
+        if (line_infos == 0 or self.lines.data[self.lines.count - 1].line != line) {
             try self.lines.append(.{ .line = line, .count = 1 });
         } else {
-            self.lines.items[line_infos - 1].count += 1;
+            self.lines.data[line_infos - 1].count += 1;
         }
-        self.code[self.count] = byte;
-        self.count += 1;
+        try self.code.append(byte);
     }
 
     const LineDissasemble = union(enum) { new: usize, old };
@@ -82,14 +111,14 @@ const Chunk = struct {
             .new => |l| try stdout.print("{:>4} ", .{l}),
             .old => try stdout.print("   | ", .{}),
         }
-        switch (@intToEnum(OpCode, self.code[offset])) {
+        switch (@intToEnum(OpCode, self.code.data[offset])) {
             .ret => {
                 try stdout.print(" {s:<5}\n", .{"RET"});
                 return offset + 1;
             },
             .constant => {
-                const index = self.code[offset + 1];
-                const val = self.values.items[index];
+                const index = self.code.data[offset + 1];
+                const val = self.values.data[index];
                 try stdout.print(" {s:<5} {} ({})\n", .{ "CONST", index, val });
                 return offset + 2;
             },
@@ -99,18 +128,18 @@ const Chunk = struct {
     fn disassemble(self: *const Self, name: []const u8) !void {
         const stdout = std.io.getStdOut().writer();
         try stdout.print("== {s} ==\n", .{name});
-        if (self.count == 0)
+        if (self.code.count == 0)
             return;
 
         var offset: usize = 0;
         var line_offset: usize = 0;
-        var current_line_length: usize = self.lines.items[0].count;
-        while (offset < self.count) {
-            var line: LineDissasemble = if (offset == 0) .{ .new = self.lines.items[0].line } else .old;
+        var current_line_length: usize = self.lines.data[0].count;
+        while (offset < self.code.count) {
+            var line: LineDissasemble = if (offset == 0) .{ .new = self.lines.data[0].line } else .old;
             if (current_line_length == 0) {
                 line_offset += 1;
-                current_line_length = self.lines.items[line_offset].count;
-                line = .{ .new = self.lines.items[line_offset].line };
+                current_line_length = self.lines.data[line_offset].count;
+                line = .{ .new = self.lines.data[line_offset].line };
             }
             offset = try self.disassembleInstruction(stdout, offset, line);
             current_line_length -= 1;
@@ -119,6 +148,7 @@ const Chunk = struct {
 
     fn deinit(self: *Self) void {
         self.allocator.deinit(self.code);
+        self.code.deinit();
         self.values.deinit();
         self.lines.deinit();
     }
