@@ -1,6 +1,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+const DEBUG_TRACE_EXECUTION = true;
+
 const OpCode = enum(u8) {
     ret,
     constant,
@@ -76,6 +78,8 @@ const Chunk = struct {
 
     const Self = @This();
 
+    const LineDissasemble = union(enum) { new: usize, old };
+
     fn init(allocator: *Allocator) Self {
         return Self{
             .allocator = allocator,
@@ -102,8 +106,6 @@ const Chunk = struct {
         }
         try self.code.append(byte);
     }
-
-    const LineDissasemble = union(enum) { new: usize, old };
 
     fn disassembleInstruction(self: *const Self, stdout: anytype, offset: usize, line: LineDissasemble) !usize {
         try stdout.print("{x:0>4} ", .{offset});
@@ -164,6 +166,7 @@ const Vm = struct {
     ip: [*]const u8,
 
     const Self = @This();
+    const Error = if (DEBUG_TRACE_EXECUTION) anyerror else InterpretError;
 
     fn init() Self {
         return .{
@@ -178,23 +181,42 @@ const Vm = struct {
         return v;
     }
 
-    fn run(self: *Self) InterpretError!void {
+    fn run(self: *Self) Error!void {
+        const chunk = self.chunk.?;
+
+        const stdout = std.io.getStdOut().writer();
+        var line_offset: usize = 0;
+        var current_line_length: usize = chunk.lines.data[0].count;
+        var first = true;
+
         while (true) {
+            if (comptime DEBUG_TRACE_EXECUTION) {
+                var line: Chunk.LineDissasemble = if (first) .{ .new = chunk.lines.data[0].line } else .old;
+                if (current_line_length == 0) {
+                    line_offset += 1;
+                    current_line_length = chunk.lines.data[line_offset].count;
+                    line = .{ .new = chunk.lines.data[line_offset].line };
+                }
+                const offset = @ptrToInt(self.ip) - @ptrToInt(chunk.code.data);
+                _ = try chunk.disassembleInstruction(stdout, offset, line);
+            }
+
             switch (@intToEnum(OpCode, self.readByte())) {
                 .constant => {
                     const index = self.readByte();
-                    const value = self.chunk.?.values.data[index];
+                    const value = chunk.values.data[index];
                     std.log.info("{}", .{value});
                 },
                 .ret => return,
             }
+            first = false;
         }
     }
 
-    fn interpret(self: *Self, chunk: *const Chunk) InterpretError!void {
+    fn interpret(self: *Self, chunk: *const Chunk) Error!void {
         self.chunk = chunk;
         self.ip = chunk.code.data;
-        return self.run();
+        return try self.run();
     }
 };
 
