@@ -11,6 +11,10 @@ const OpCode = enum(u8) {
     ret,
     constant,
     negate,
+    add,
+    subtract,
+    multiply,
+    divide,
 };
 
 const Value = f32;
@@ -112,17 +116,29 @@ const Chunk = struct {
         try self.code.append(byte);
     }
 
+    fn disassembleByteInstruction(stdout: anytype, offset: usize, instruction: OpCode) !usize {
+        const s = switch (instruction) {
+            .ret => "RET",
+            .negate => "NEGATE",
+            .add => "ADD",
+            .subtract => "SUB",
+            .multiply => "MUL",
+            .divide => "DIV",
+            else => unreachable,
+        };
+        try stdout.print(" {s:<5}\n", .{s});
+        return offset + 1;
+    }
+
     fn disassembleInstruction(self: *const Self, stdout: anytype, offset: usize, line: LineDissasemble) !usize {
         try stdout.print("{x:0>4} ", .{offset});
         switch (line) {
             .new => |l| try stdout.print("{:>4} ", .{l}),
             .old => try stdout.print("   | ", .{}),
         }
-        switch (@intToEnum(OpCode, self.code.data[offset])) {
-            .ret => {
-                try stdout.print(" {s:<5}\n", .{"RET"});
-                return offset + 1;
-            },
+        const instruction = @intToEnum(OpCode, self.code.data[offset]);
+        switch (instruction) {
+            .ret, .negate, .add, .subtract, .multiply, .divide => return disassembleByteInstruction(stdout, offset, instruction),
             .constant => {
                 const index = self.code.data[offset + 1];
                 const val = self.values.data[index];
@@ -130,10 +146,6 @@ const Chunk = struct {
                 try stdout.print("({d:.[precision]})\n", .{ .number = val, .precision = FLOAT_PRECISION });
                 return offset + 2;
             },
-            .negate => {
-              try stdout.print(" {s:<5}\n", .{"NEGATE"});
-              return offset + 1;
-            }
         }
     }
 
@@ -228,6 +240,21 @@ const Vm = struct {
         return v;
     }
 
+    fn runBinaryOp(self: *Self, op: OpCode) void {
+        const b = self.stack.pop();
+        const a = self.stack.pop();
+        const res = r: {
+            switch (op) {
+                .add => break :r a + b,
+                .subtract => break :r a - b,
+                .multiply => break :r a * b,
+                .divide => break :r a / b,
+                else => unreachable,
+            }
+        };
+        self.stack.push(res);
+    }
+
     fn run(self: *Self) Error!void {
         self.stack.reset();
 
@@ -251,7 +278,8 @@ const Vm = struct {
                 _ = try chunk.disassembleInstruction(stdout, offset, line);
             }
 
-            switch (@intToEnum(OpCode, self.readByte())) {
+            const op = @intToEnum(OpCode, self.readByte());
+            switch (op) {
                 .constant => {
                     const index = self.readByte();
                     self.stack.push(chunk.values.data[index]);
@@ -264,6 +292,7 @@ const Vm = struct {
                     const val = self.stack.pop();
                     self.stack.push(-val);
                 },
+                .add, .subtract, .multiply, .divide => self.runBinaryOp(op),
             }
             first = false;
         }
@@ -281,9 +310,23 @@ pub fn main() anyerror!void {
     var alloc = std.heap.FixedBufferAllocator.init(&data);
 
     var chunk = Chunk.init(&alloc.allocator);
-    const constant = try chunk.addConstant(1.3);
+
+    var constant = try chunk.addConstant(1.2);
     try chunk.writeChunk(@enumToInt(OpCode.constant), 123);
     try chunk.writeChunk(constant, 123);
+
+    constant = try chunk.addConstant(3.4);
+    try chunk.writeChunk(@enumToInt(OpCode.constant), 123);
+    try chunk.writeChunk(constant, 123);
+
+    try chunk.writeChunk(@enumToInt(OpCode.add), 123);
+
+    constant = try chunk.addConstant(5.6);
+    try chunk.writeChunk(@enumToInt(OpCode.constant), 123);
+    try chunk.writeChunk(constant, 123);
+
+    try chunk.writeChunk(@enumToInt(OpCode.divide), 123);
+
     try chunk.writeChunk(@enumToInt(OpCode.negate), 123);
     try chunk.writeChunk(@enumToInt(OpCode.ret), 123);
 
