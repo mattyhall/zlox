@@ -3,6 +3,8 @@ const Allocator = std.mem.Allocator;
 
 const DEBUG_TRACE_EXECUTION = true;
 
+const FLOAT_PRECISION = 6;
+
 const MAX_STACK = 256;
 
 const OpCode = enum(u8) {
@@ -124,7 +126,8 @@ const Chunk = struct {
             .constant => {
                 const index = self.code.data[offset + 1];
                 const val = self.values.data[index];
-                try stdout.print(" {s:<5} {} ({})\n", .{ "CONST", index, val });
+                try stdout.print(" {s:<5} {} ", .{ "CONST", index });
+                try stdout.print("({d:.[precision]})\n", .{ .number = val, .precision = FLOAT_PRECISION });
                 return offset + 2;
             },
             .negate => {
@@ -193,7 +196,7 @@ const Stack = struct {
         if (current == self.top) return;
         try stdout.print("    ", .{});
         while (current != self.top) : (current += 1) {
-            try stdout.print("[{}] ", .{current[0]});
+            try stdout.print("[{d:.[precision]}] ", .{ .number = current[0], .precision = FLOAT_PRECISION });
         }
         try stdout.print("\n", .{});
     }
@@ -254,7 +257,7 @@ const Vm = struct {
                     self.stack.push(chunk.values.data[index]);
                 },
                 .ret => {
-                    try stdout.print("{}\n", .{self.stack.pop()});
+                    try stdout.print("{d:.[precision]}\n", .{ .number = self.stack.pop(), .precision = FLOAT_PRECISION });
                     return;
                 },
                 .negate => {
