@@ -62,7 +62,7 @@ fn DynamicArray(comptime T: type) type {
         }
 
         fn deinit(self: *Self) void {
-          self.allocator.deinit(self.slice());
+            self.allocator.deinit(self.slice());
         }
     };
 }
@@ -154,8 +154,51 @@ const Chunk = struct {
     }
 };
 
+const InterpretError = error{
+    compile_error,
+    runtime_error,
+};
+
+const Vm = struct {
+    chunk: ?*const Chunk,
+    ip: [*]const u8,
+
+    const Self = @This();
+
+    fn init() Self {
+        return .{
+            .chunk = null,
+            .ip = @intToPtr([*]const u8, 0x8),
+        };
+    }
+
+    inline fn readByte(self: *Self) u8 {
+        const v = self.ip[0];
+        self.ip += 1;
+        return v;
+    }
+
+    fn run(self: *Self) InterpretError!void {
+        while (true) {
+            switch (@intToEnum(OpCode, self.readByte())) {
+                .constant => {
+                    const index = self.readByte();
+                    const value = self.chunk.?.values.data[index];
+                    std.log.info("{}", .{value});
+                },
+                .ret => return,
+            }
+        }
+    }
+
+    fn interpret(self: *Self, chunk: *const Chunk) InterpretError!void {
+        self.chunk = chunk;
+        self.ip = chunk.code.data;
+        return self.run();
+    }
+};
+
 pub fn main() anyerror!void {
-    std.log.info("All your codebase are belong to us.", .{});
     var data: [16 * 1024]u8 = undefined;
     var alloc = std.heap.FixedBufferAllocator.init(&data);
 
@@ -165,5 +208,8 @@ pub fn main() anyerror!void {
     try chunk.writeChunk(constant, 123);
     try chunk.writeChunk(@enumToInt(OpCode.ret), 123);
 
-    try chunk.disassemble("test chunk");
+    var vm = Vm.init();
+    try vm.interpret(&chunk);
+
+    // try chunk.disassemble("test chunk");
 }
