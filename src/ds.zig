@@ -46,7 +46,7 @@ pub fn DynamicArray(comptime T: type) type {
                     self.data = (try self.allocator.alloc(T, 8)).ptr;
                 } else {
                     self.capacity *= 2;
-                    self.data = (try self.allocator.realloc(self.slice(), self.capacity)).ptr;
+                    self.data = (try self.allocator.realloc(self.items(), self.capacity)).ptr;
                 }
             }
             self.data[self.count] = v;

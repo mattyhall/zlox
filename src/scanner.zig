@@ -7,6 +7,23 @@ pub const TokenType = enum {
     right_paren,
     semicolon,
     plus,
+    minus,
+    slash,
+    star,
+    comma,
+    left_brace,
+    right_brace,
+    dot,
+
+    // One or two character tokens
+    bang,
+    bang_equal,
+    equal,
+    equal_equal,
+    less,
+    less_equal,
+    more,
+    more_equal,
 
     // Literals
     string,
@@ -71,6 +88,13 @@ pub const Scanner = struct {
 
     fn peek(self: *const Self) u8 {
         return self.start[self.current];
+    }
+
+    fn match(self: *Self, expected: u8) bool {
+        if (self.isAtEnd()) return false;
+        if (self.start[self.current] != expected) return false;
+        self.current += 1;
+        return true;
     }
 
     fn skipWhitespace(self: *Self) void {
@@ -139,7 +163,18 @@ pub const Scanner = struct {
             ')' => return self.makeToken(.right_paren),
             ';' => return self.makeToken(.semicolon),
             '+' => return self.makeToken(.plus),
+            '-' => return self.makeToken(.minus),
+            '/' => return self.makeToken(.slash),
+            '*' => return self.makeToken(.star),
+            ',' => return self.makeToken(.comma),
+            '{' => return self.makeToken(.left_brace),
+            '}' => return self.makeToken(.right_brace),
+            '.' => return self.makeToken(.dot),
             '"' => return self.string(),
+            '!' => return self.makeToken(if (self.match('=')) .bang_equal else .bang),
+            '=' => return self.makeToken(if (self.match('=')) .equal_equal else .equal),
+            '<' => return self.makeToken(if (self.match('=')) .less_equal else .less),
+            '>' => return self.makeToken(if (self.match('=')) .more_equal else .more),
             else => {},
         }
 
@@ -176,8 +211,27 @@ test "identifiers" {
 }
 
 test "punctuation" {
-    try testTokenise("();", &.{ .left_paren, .right_paren, .semicolon, .eof });
-    try testTokenise("+;", &.{ .plus, .semicolon, .eof });
+    try testTokenise("(){};", &.{
+        .left_paren,
+        .right_paren,
+        .left_brace,
+        .right_brace,
+        .semicolon,
+        .eof,
+    });
+    try testTokenise("+-*/", &.{ .plus, .minus, .star, .slash, .eof });
+    try testTokenise("< > <= >= == != ! =", &.{
+        .less,
+        .more,
+        .less_equal,
+        .more_equal,
+        .equal_equal,
+        .bang_equal,
+        .bang,
+        .equal,
+        .eof,
+    });
+    try testTokenise("<#", &.{ .less, .err });
 }
 
 test "keyword" {
@@ -195,6 +249,17 @@ test "random long strings" {
         .string,
         .number,
         .semicolon,
+        .eof,
+    });
+    try testTokenise("print 1 >= 2; print !2.67843", &.{
+        .print,
+        .number,
+        .more_equal,
+        .number,
+        .semicolon,
+        .print,
+        .bang,
+        .number,
         .eof,
     });
 }
