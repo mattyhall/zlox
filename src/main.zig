@@ -1,34 +1,37 @@
 const std = @import("std");
 const vm = @import("vm.zig");
+const scan = @import("scanner.zig");
 
 const Allocator = std.mem.Allocator;
 
 pub fn main() anyerror!void {
-    var data: [16 * 1024]u8 = undefined;
-    var alloc = std.heap.FixedBufferAllocator.init(&data);
+    // var data: [16 * 1024]u8 = undefined;
+    // var alloc = std.heap.FixedBufferAllocator.init(&data);
 
-    var chunk = vm.Chunk.init(&alloc.allocator);
-    defer chunk.deinit();
+    const src = "print 1+ \"hello\" 1.2;";
+    var line: usize = 0;
+    var scanner = scan.Scanner.init(src);
+    const stdout = std.io.getStdOut().writer();
+    while (true) {
+        const token = scanner.scanToken();
 
-    var constant = try chunk.addConstant(1.2);
-    try chunk.writeChunk(@enumToInt(vm.OpCode.constant), 123);
-    try chunk.writeChunk(constant, 123);
+        if (token.typ == .err) {
+            try stdout.print("{s} '{s}'\n on line {}", .{
+                scanner.err orelse unreachable,
+                token.loc,
+                token.line,
+            });
+            break;
+        }
 
-    constant = try chunk.addConstant(3.4);
-    try chunk.writeChunk(@enumToInt(vm.OpCode.constant), 123);
-    try chunk.writeChunk(constant, 123);
+        if (token.line != line) {
+            try stdout.print("{:>4} ", .{token.line});
+            line = token.line;
+        } else {
+            try stdout.print("   | ", .{});
+        }
+        try stdout.print("{} {s}\n", .{ token.typ, token.loc });
 
-    try chunk.writeChunk(@enumToInt(vm.OpCode.add), 123);
-
-    constant = try chunk.addConstant(5.6);
-    try chunk.writeChunk(@enumToInt(vm.OpCode.constant), 123);
-    try chunk.writeChunk(constant, 123);
-
-    try chunk.writeChunk(@enumToInt(vm.OpCode.divide), 123);
-
-    try chunk.writeChunk(@enumToInt(vm.OpCode.negate), 123);
-    try chunk.writeChunk(@enumToInt(vm.OpCode.ret), 123);
-
-    var m = vm.Vm.init();
-    try m.interpret(&chunk);
+        if (token.typ == .eof) break;
+    }
 }
