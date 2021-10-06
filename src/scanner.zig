@@ -31,7 +31,22 @@ pub const TokenType = enum {
     identifier,
 
     // Keywords
+    and_,
+    class,
+    else_,
+    false_,
+    for_,
+    fun,
+    if_,
+    nil,
+    or_,
     print,
+    return_,
+    super,
+    this,
+    true_,
+    var_,
+    while_,
 
     // Special
     eof,
@@ -132,11 +147,50 @@ pub const Scanner = struct {
         return self.makeToken(.number);
     }
 
-    fn identifierType(self: *const Self) TokenType {
-        const s = self.start[0..self.current];
-        if (std.mem.eql(u8, s, "print"))
-            return .print;
-        return .identifier;
+    fn checkKeyword(self: *Self, start: usize, check: []const u8, typ: TokenType) TokenType {
+        if (self.current != start + check.len) {
+            return .identifier;
+        } else if (std.mem.eql(u8, self.start[start..self.current], check)) {
+            return typ;
+        } else {
+            return .identifier;
+        }
+    }
+
+    fn identifierType(self: *Self) TokenType {
+        switch (self.start[0]) {
+            'a' => return self.checkKeyword(1, "nd", .and_),
+            'c' => return self.checkKeyword(1, "lass", .class),
+            'e' => return self.checkKeyword(1, "lse", .else_),
+            'f' => {
+                if (self.current <= 1)
+                    return .identifier;
+                switch (self.start[1]) {
+                    'a' => return self.checkKeyword(2, "lse", .false_),
+                    'o' => return self.checkKeyword(2, "r", .for_),
+                    'u' => return self.checkKeyword(2, "n", .fun),
+                    else => return .identifier,
+                }
+            },
+            'i' => return self.checkKeyword(1, "f", .if_),
+            'n' => return self.checkKeyword(1, "il", .nil),
+            'o' => return self.checkKeyword(1, "r", .or_),
+            'p' => return self.checkKeyword(1, "rint", .print),
+            'r' => return self.checkKeyword(1, "eturn", .return_),
+            's' => return self.checkKeyword(1, "uper", .super),
+            't' => {
+                if (self.current <= 1)
+                    return .identifier;
+                switch (self.start[1]) {
+                    'h' => return self.checkKeyword(2, "is", .this),
+                    'r' => return self.checkKeyword(2, "ue", .true_),
+                    else => return .identifier,
+                }
+            },
+            'v' => return self.checkKeyword(1, "ar", .var_),
+            'w' => return self.checkKeyword(1, "hile", .while_),
+            else => return .identifier,
+        }
     }
 
     fn identifier(self: *Self) Token {
@@ -235,10 +289,43 @@ test "punctuation" {
 }
 
 test "keyword" {
-    const keywords = [_]TokenType{.print};
-    for (keywords) |keyword| {
-        try testTokenise(@tagName(keyword), &.{ keyword, .eof });
+    const keywords = [_]TokenType{
+        .and_,
+        .class,
+        .else_,
+        .false_,
+        .for_,
+        .fun,
+        .if_,
+        .nil,
+        .or_,
+        .print,
+        .return_,
+        .super,
+        .this,
+        .true_,
+        .var_,
+        .while_,
+    };
+    inline for (keywords) |keyword| {
+        const tag = @tagName(keyword);
+        const slice = if (tag[tag.len - 1] == '_') tag[0 .. tag.len - 1] else tag;
+        try testTokenise(slice, &.{ keyword, .eof });
     }
+
+    const close_words = [_][]const u8{ "superb", "thistle", "function", "fortune" };
+    inline for (close_words) |word| {
+        try testTokenise(word, &.{ .identifier, .eof });
+    }
+
+    try testTokenise("superb;thistle;function", &.{
+        .identifier,
+        .semicolon,
+        .identifier,
+        .semicolon,
+        .identifier,
+        .eof,
+    });
 }
 
 test "random long strings" {
