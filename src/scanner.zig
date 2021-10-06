@@ -1,4 +1,5 @@
 const std = @import("std");
+const ds = @import("ds.zig");
 
 pub const TokenType = enum {
     // Single-character tokens
@@ -115,7 +116,7 @@ pub const Scanner = struct {
     }
 
     fn identifier(self: *Self) Token {
-        while (!self.isAtEnd() and std.ascii.isAlNum(self.peek()))
+        while (!self.isAtEnd() and (self.peek() == '_' or std.ascii.isAlNum(self.peek())))
             _ = self.advance();
         return self.makeToken(self.identifierType());
     }
@@ -145,3 +146,55 @@ pub const Scanner = struct {
         return self.errorToken("Unexpected character");
     }
 };
+
+fn testTokenise(src: []const u8, expected: []const TokenType) !void {
+    var tokens = ds.DynamicArray(TokenType).init(std.testing.allocator);
+    defer tokens.deinit();
+    var scanner = Scanner.init(src);
+    while (true) {
+        const token = scanner.scanToken();
+        try tokens.append(token.typ);
+        if (token.typ == .eof or token.typ == .err)
+            break;
+    }
+    try std.testing.expectEqualSlices(TokenType, expected, tokens.items());
+}
+
+test "literals" {
+    try testTokenise("1 1.2 5;", &.{ .number, .number, .number, .semicolon, .eof });
+    try testTokenise("\"hello\"", &.{ .string, .eof });
+    try testTokenise("\"hello;world\";", &.{ .string, .semicolon, .eof });
+    try testTokenise("\"", &.{.err});
+}
+
+test "identifiers" {
+    try testTokenise("helloWorld", &.{ .identifier, .eof });
+    try testTokenise("hello_world", &.{ .identifier, .eof });
+    try testTokenise("hi1", &.{ .identifier, .eof });
+    try testTokenise("hi1_", &.{ .identifier, .eof });
+    try testTokenise("_hi", &.{.err});
+}
+
+test "punctuation" {
+    try testTokenise("();", &.{ .left_paren, .right_paren, .semicolon, .eof });
+    try testTokenise("+;", &.{ .plus, .semicolon, .eof });
+}
+
+test "keyword" {
+    const keywords = [_]TokenType{.print};
+    for (keywords) |keyword| {
+        try testTokenise(@tagName(keyword), &.{ keyword, .eof });
+    }
+}
+
+test "random long strings" {
+    try testTokenise("print 1+ \"hello\" 1.2;", &.{
+        .print,
+        .number,
+        .plus,
+        .string,
+        .number,
+        .semicolon,
+        .eof,
+    });
+}

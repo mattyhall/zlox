@@ -35,3 +35,7 @@ pub fn main() anyerror!void {
         if (token.typ == .eof) break;
     }
 }
+
+test {
+    std.testing.refAllDecls(@This());
+}
