@@ -97,11 +97,12 @@ pub const Scanner = struct {
     }
 
     fn peekNext(self: *const Self) u8 {
-        if (self.start.len < 2) return 0;
+        if (self.start.len < self.current + 1) return 0;
         return self.start[self.current + 1];
     }
 
     fn peek(self: *const Self) u8 {
+        if (self.start.len <= self.current) return 0;
         return self.start[self.current];
     }
 
@@ -250,7 +251,7 @@ fn testTokenise(src: []const u8, expected: []const TokenType) !void {
 }
 
 test "literals" {
-    try testTokenise("1 1.2 5;", &.{ .number, .number, .number, .semicolon, .eof });
+    try testTokenise("1 1.2 5 -7", &.{ .number, .number, .number, .minus, .number, .eof });
     try testTokenise("\"hello\"", &.{ .string, .eof });
     try testTokenise("\"hello;world\";", &.{ .string, .semicolon, .eof });
     try testTokenise("\"", &.{.err});
@@ -346,6 +347,17 @@ test "random long strings" {
         .semicolon,
         .print,
         .bang,
+        .number,
+        .eof,
+    });
+    try testTokenise("1 + 3 * 2 / -7", &.{
+        .number,
+        .plus,
+        .number,
+        .star,
+        .number,
+        .slash,
+        .minus,
         .number,
         .eof,
     });
