@@ -92,7 +92,7 @@ pub const Chunk = struct {
         }
     }
 
-    fn disassemble(self: *const Self, name: []const u8) !void {
+    pub fn disassemble(self: *const Self, name: []const u8) !void {
         const stdout = std.io.getStdOut().writer();
         try stdout.print("== {s} ==\n", .{name});
         if (self.code.count == 0)
