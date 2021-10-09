@@ -168,7 +168,7 @@ pub const Vm = struct {
     stack: ds.Stack,
 
     const Self = @This();
-    const Error = if (DEBUG_TRACE_EXECUTION) anyerror else InterpretError;
+    pub const Error = if (DEBUG_TRACE_EXECUTION) anyerror else InterpretError;
 
     pub fn init() Self {
         return .{
