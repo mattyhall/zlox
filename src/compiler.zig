@@ -148,7 +148,7 @@ pub const Parser = struct {
 
     fn unary(self: *Self) !void {
         const typ = self.previous.typ;
-        try self.expression();
+        try self.parsePrecedence(.unary);
         switch (typ) {
             .minus => try self.emit(&.{@enumToInt(OpCode.negate)}),
             else => unreachable,
