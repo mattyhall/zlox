@@ -180,7 +180,7 @@ pub const Vm = struct {
         self.reset();
     }
 
-    fn run(self: *Self) Error!void {
+    fn run(self: *Self) Error!Value {
         self.stack.reset();
 
         const chunk = self.chunk.?;
@@ -210,9 +210,10 @@ pub const Vm = struct {
                     self.stack.push(chunk.values.data[index]);
                 },
                 .ret => {
-                    try self.stack.pop().print(stdout);
+                    const val = self.stack.pop();
+                    try val.print(stdout);
                     try stdout.print("\n", .{});
-                    return;
+                    return val;
                 },
                 .negate => {
                     if (self.stack.peek(0) != .number) {
@@ -229,9 +230,10 @@ pub const Vm = struct {
         }
     }
 
-    pub fn interpret(self: *Self, chunk: *const Chunk) Error!void {
+    pub fn interpret(self: *Self, chunk: *const Chunk) Error!Value {
         self.chunk = chunk;
         self.ip = chunk.code.data;
         return try self.run();
     }
 };
+

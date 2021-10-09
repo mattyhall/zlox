@@ -20,9 +20,10 @@ pub fn main() anyerror!void {
     try chunk.disassemble("test");
 
     var v = vm.Vm.init();
-    try v.interpret(&chunk);
+    _ = try v.interpret(&chunk);
 }
 
 test {
+    _ = @import("end_to_end_tests.zig");
     std.testing.refAllDecls(@This());
 }
