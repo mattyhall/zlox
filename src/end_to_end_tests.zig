@@ -32,10 +32,35 @@ test "sums" {
 }
 
 test "boolean logic" {
+    // Not
     try std.testing.expectEqual(ds.Value{ .boolean = false }, run("!1"));
     try std.testing.expectEqual(ds.Value{ .boolean = false }, run("!-1"));
     try std.testing.expectEqual(ds.Value{ .boolean = false }, run("!42.0"));
     try std.testing.expectEqual(ds.Value{ .boolean = false }, run("!true"));
     try std.testing.expectEqual(ds.Value{ .boolean = true }, run("!false"));
     try std.testing.expectEqual(ds.Value{ .boolean = true }, run("!nil"));
+
+    // (In)Equality
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("1 == 1"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("-1 == -1"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("1.123 == 1.123"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("true == true"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("false == false"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("!false == !false"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("!true == !true"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("nil == nil"));
+
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("1 != 5"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("1.1 != 1.2"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("true != false"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("!true != !false"));
+
+    // Gt/lt
+
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("1.23 < 2.23"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("1.23 <= 2.23"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true  }, run("1 <= 2"));
+    try std.testing.expectEqual(ds.Value{ .boolean = false }, run("1.23 > 2.23"));
+    try std.testing.expectEqual(ds.Value{ .boolean = false }, run("1.23 >= 2.23"));
+    try std.testing.expectEqual(ds.Value{ .boolean = false }, run("1 >= 2"));
 }

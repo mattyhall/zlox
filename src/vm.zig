@@ -18,6 +18,12 @@ pub const OpCode = enum(u8) {
     subtract,
     multiply,
     divide,
+    equal,
+    not_equal,
+    greater,
+    greater_equal,
+    less,
+    less_equal,
 };
 
 const LineInfo = struct {
@@ -75,6 +81,12 @@ pub const Chunk = struct {
             .true_ => "TRUE",
             .false_ => "FALSE",
             .nil => "NIL",
+            .equal => "EQ",
+            .not_equal => "NEQ",
+            .greater => "GT",
+            .greater_equal => "GTE",
+            .less => "LT",
+            .less_equal => "LTE",
             else => unreachable,
         };
         try stdout.print(" {s:<5}\n", .{s});
@@ -99,6 +111,12 @@ pub const Chunk = struct {
             .false_,
             .nil,
             .not,
+            .equal,
+            .not_equal,
+            .greater,
+            .greater_equal,
+            .less,
+            .less_equal,
             => return disassembleByteInstruction(stdout, offset, instruction),
             .constant => {
                 const index = self.code.data[offset + 1];
@@ -189,6 +207,37 @@ pub const Vm = struct {
         self.stack.push(.{ .number = res });
     }
 
+    fn runBoolBinaryOp(self: *Self, op: OpCode) Error!void {
+        if (op == .equal or op == .not_equal) {
+            const b = self.stack.pop();
+            const a = self.stack.pop();
+            if (@as(ds.Type, a) != @as(ds.Type, b)) {
+                self.stack.push(.{ .boolean = if (op == .equal) false else true });
+                return;
+            }
+            self.stack.push(.{ .boolean = switch (@as(ds.Type, a)) {
+                .nil => true,
+                .boolean => if (op == .equal) a.boolean == b.boolean else a.boolean != b.boolean,
+                .number => if (op == .equal) a.number == b.number else a.number != b.number,
+            } });
+            return;
+        }
+        if (self.stack.peek(1) != .number or self.stack.peek(0) != .number) {
+            try self.runtimeError("Operands must be numbers", .{});
+            return Error.runtime_error;
+        }
+        const b = self.stack.pop().number;
+        const a = self.stack.pop().number;
+        const res = switch (op) {
+            .less => a < b,
+            .less_equal => a <= b,
+            .greater => a > b,
+            .greater_equal => a >= b,
+            else => unreachable,
+        };
+        self.stack.push(.{ .boolean = res });
+    }
+
     fn runtimeError(self: *Self, comptime fmt: []const u8, args: anytype) !void {
         const stderr = std.io.getStdErr().writer();
         try stderr.print(fmt, args);
@@ -247,6 +296,7 @@ pub const Vm = struct {
                 .false_ => self.stack.push(.{ .boolean = false }),
                 .nil => self.stack.push(.{ .nil = undefined }),
                 .add, .subtract, .multiply, .divide => try self.runBinaryOp(op),
+                .equal, .not_equal, .less, .less_equal, .greater, .greater_equal => try self.runBoolBinaryOp(op),
             }
             first = false;
         }
