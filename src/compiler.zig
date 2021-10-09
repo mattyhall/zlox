@@ -157,7 +157,7 @@ pub const Parser = struct {
 
     fn number(self: *Self) !void {
         const num = try std.fmt.parseFloat(f32, self.previous.loc orelse unreachable);
-        try self.emit(&.{ @enumToInt(OpCode.constant), try self.chunk.*.addConstant(num) });
+        try self.emit(&.{ @enumToInt(OpCode.constant), try self.chunk.*.addConstant(.{ .number = num }) });
     }
 
     fn binary(self: *Self) !void {

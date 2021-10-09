@@ -86,7 +86,8 @@ pub const Chunk = struct {
                 const index = self.code.data[offset + 1];
                 const val = self.values.data[index];
                 try stdout.print(" {s:<5} {} ", .{ "CONST", index });
-                try stdout.print("({d:.[precision]})\n", .{ .number = val, .precision = ds.FLOAT_PRECISION });
+                try val.print(stdout);
+                try stdout.print("\n", .{});
                 return offset + 2;
             },
         }
@@ -151,9 +152,13 @@ pub const Vm = struct {
         return v;
     }
 
-    fn runBinaryOp(self: *Self, op: OpCode) void {
-        const b = self.stack.pop();
-        const a = self.stack.pop();
+    fn runBinaryOp(self: *Self, op: OpCode) Error!void {
+        if (self.stack.peek(1) != .number or self.stack.peek(0) != .number) {
+            try self.runtimeError("Operands must be numbers", .{});
+            return Error.runtime_error;
+        }
+        const b = self.stack.pop().number;
+        const a = self.stack.pop().number;
         const res = r: {
             switch (op) {
                 .add => break :r a + b,
@@ -163,7 +168,16 @@ pub const Vm = struct {
                 else => unreachable,
             }
         };
-        self.stack.push(res);
+        self.stack.push(.{ .number = res });
+    }
+
+    fn runtimeError(self: *Self, comptime fmt: []const u8, args: anytype) !void {
+        const stderr = std.io.getStdErr().writer();
+        try stderr.print(fmt, args);
+        try stderr.print("\n", .{});
+
+        // TODO: print line number
+        self.reset();
     }
 
     fn run(self: *Self) Error!void {
@@ -196,14 +210,20 @@ pub const Vm = struct {
                     self.stack.push(chunk.values.data[index]);
                 },
                 .ret => {
-                    try stdout.print("{d:.[precision]}\n", .{ .number = self.stack.pop(), .precision = ds.FLOAT_PRECISION });
+                    try self.stack.pop().print(stdout);
+                    try stdout.print("\n", .{});
                     return;
                 },
                 .negate => {
+                    if (self.stack.peek(0) != .number) {
+                        try self.runtimeError("Operand must be a number", .{});
+                        return Error.runtime_error;
+                    }
+
                     const val = self.stack.pop();
-                    self.stack.push(-val);
+                    self.stack.push(.{ .number = -(val.number) });
                 },
-                .add, .subtract, .multiply, .divide => self.runBinaryOp(op),
+                .add, .subtract, .multiply, .divide => try self.runBinaryOp(op),
             }
             first = false;
         }
@@ -215,4 +235,3 @@ pub const Vm = struct {
         return try self.run();
     }
 };
-

@@ -3,7 +3,28 @@ const Allocator = std.mem.Allocator;
 
 const MAX_STACK = 256;
 pub const FLOAT_PRECISION = 6;
-pub const Value = f32;
+
+const Type = enum {
+    number,
+    boolean,
+    nil,
+};
+
+pub const Value = union(Type) {
+    number: f32,
+    boolean: bool,
+    nil: u0,
+
+    const Self = @This();
+
+    pub fn print(self: Self, writer: anytype) !void {
+        switch (self) {
+            .number => |n| try writer.print("{d:.[precision]}", .{ .number = n, .precision = FLOAT_PRECISION }),
+            .nil => try writer.print("nil", .{}),
+            .boolean => |b| try writer.print("{any}", .{b}),
+        }
+    }
+};
 
 pub fn DynamicArray(comptime T: type) type {
     return struct {
@@ -79,14 +100,20 @@ pub const Stack = struct {
         return self.top[0];
     }
 
+    pub fn peek(self: *const Self, n: usize) Value {
+        const ptr = self.top - 1 - n;
+        return ptr[0];
+    }
+
     pub fn debugPrint(self: *Self, stdout: anytype) !void {
         var current: [*]Value = &self.data;
         if (current == self.top) return;
         try stdout.print("    ", .{});
         while (current != self.top) : (current += 1) {
-            try stdout.print("[{d:.[precision]}] ", .{ .number = current[0], .precision = FLOAT_PRECISION });
+            try stdout.print("[", .{});
+            try current[0].print(stdout);
+            try stdout.print("] ", .{});
         }
         try stdout.print("\n", .{});
     }
 };
-
