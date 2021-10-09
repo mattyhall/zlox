@@ -30,3 +30,12 @@ test "sums" {
     try std.testing.expectEqual(ds.Value{ .number = 8.0 }, run("-2 + 7 + 3"));
     try std.testing.expectEqual(ds.Value{ .number = 0.0 }, run("8 + 12 * -2 / 3"));
 }
+
+test "boolean logic" {
+    try std.testing.expectEqual(ds.Value{ .boolean = false }, run("!1"));
+    try std.testing.expectEqual(ds.Value{ .boolean = false }, run("!-1"));
+    try std.testing.expectEqual(ds.Value{ .boolean = false }, run("!42.0"));
+    try std.testing.expectEqual(ds.Value{ .boolean = false }, run("!true"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("!false"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("!nil"));
+}

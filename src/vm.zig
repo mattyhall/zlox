@@ -13,6 +13,7 @@ pub const OpCode = enum(u8) {
     true_,
     false_,
     negate,
+    not,
     add,
     subtract,
     multiply,
@@ -66,6 +67,7 @@ pub const Chunk = struct {
         const s = switch (instruction) {
             .ret => "RET",
             .negate => "NEGATE",
+            .not => "NOT",
             .add => "ADD",
             .subtract => "SUB",
             .multiply => "MUL",
@@ -96,6 +98,7 @@ pub const Chunk = struct {
             .true_,
             .false_,
             .nil,
+            .not,
             => return disassembleByteInstruction(stdout, offset, instruction),
             .constant => {
                 const index = self.code.data[offset + 1];
@@ -239,6 +242,7 @@ pub const Vm = struct {
                     const val = self.stack.pop();
                     self.stack.push(.{ .number = -(val.number) });
                 },
+                .not => self.stack.push(.{ .boolean = self.stack.pop().falsey() }),
                 .true_ => self.stack.push(.{ .boolean = true }),
                 .false_ => self.stack.push(.{ .boolean = false }),
                 .nil => self.stack.push(.{ .nil = undefined }),

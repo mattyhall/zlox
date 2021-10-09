@@ -49,7 +49,7 @@ pub const Parser = struct {
         .{ .prefix = null,     .infix = null,   .precedence = .none },   //left_brace,
         .{ .prefix = null,     .infix = null,   .precedence = .none },   //right_brace,
         .{ .prefix = null,     .infix = null,   .precedence = .none },   //dot,
-        .{ .prefix = null,     .infix = null,   .precedence = .none },   //bang,
+        .{ .prefix = unary,    .infix = null,   .precedence = .none },   //bang,
         .{ .prefix = null,     .infix = null,   .precedence = .none },   //bang_equal,
         .{ .prefix = null,     .infix = null,   .precedence = .none },   //equal,
         .{ .prefix = null,     .infix = null,   .precedence = .none },   //equal_equal,
@@ -151,6 +151,7 @@ pub const Parser = struct {
         try self.parsePrecedence(.unary);
         switch (typ) {
             .minus => try self.emit(&.{@enumToInt(OpCode.negate)}),
+            .bang => try self.emit(&.{@enumToInt(OpCode.not)}),
             else => unreachable,
         }
     }

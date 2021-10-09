@@ -24,6 +24,14 @@ pub const Value = union(Type) {
             .boolean => |b| try writer.print("{any}", .{b}),
         }
     }
+
+    pub fn falsey(self: Self) bool {
+        return switch (self) {
+            .number => false,
+            .nil => true,
+            .boolean => |b| !b,
+        };
+    }
 };
 
 pub fn DynamicArray(comptime T: type) type {
