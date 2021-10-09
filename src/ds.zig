@@ -4,7 +4,7 @@ const Allocator = std.mem.Allocator;
 const MAX_STACK = 256;
 pub const FLOAT_PRECISION = 6;
 
-const Type = enum {
+pub const Type = enum {
     number,
     boolean,
     nil,

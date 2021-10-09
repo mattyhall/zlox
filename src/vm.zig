@@ -9,6 +9,9 @@ const DEBUG_TRACE_EXECUTION = true;
 pub const OpCode = enum(u8) {
     ret,
     constant,
+    nil,
+    true_,
+    false_,
     negate,
     add,
     subtract,
@@ -67,6 +70,9 @@ pub const Chunk = struct {
             .subtract => "SUB",
             .multiply => "MUL",
             .divide => "DIV",
+            .true_ => "TRUE",
+            .false_ => "FALSE",
+            .nil => "NIL",
             else => unreachable,
         };
         try stdout.print(" {s:<5}\n", .{s});
@@ -81,7 +87,16 @@ pub const Chunk = struct {
         }
         const instruction = @intToEnum(OpCode, self.code.data[offset]);
         switch (instruction) {
-            .ret, .negate, .add, .subtract, .multiply, .divide => return disassembleByteInstruction(stdout, offset, instruction),
+            .ret,
+            .negate,
+            .add,
+            .subtract,
+            .multiply,
+            .divide,
+            .true_,
+            .false_,
+            .nil,
+            => return disassembleByteInstruction(stdout, offset, instruction),
             .constant => {
                 const index = self.code.data[offset + 1];
                 const val = self.values.data[index];
@@ -224,6 +239,9 @@ pub const Vm = struct {
                     const val = self.stack.pop();
                     self.stack.push(.{ .number = -(val.number) });
                 },
+                .true_ => self.stack.push(.{ .boolean = true }),
+                .false_ => self.stack.push(.{ .boolean = false }),
+                .nil => self.stack.push(.{ .nil = undefined }),
                 .add, .subtract, .multiply, .divide => try self.runBinaryOp(op),
             }
             first = false;
@@ -236,4 +254,3 @@ pub const Vm = struct {
         return try self.run();
     }
 };
-

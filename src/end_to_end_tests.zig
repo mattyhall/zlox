@@ -18,6 +18,9 @@ fn run(src: []const u8) ds.Value {
 
 test "literals" {
     try std.testing.expectEqual(ds.Value{ .number = -2 }, run("-2"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run("true"));
+    try std.testing.expectEqual(ds.Value{ .boolean = false }, run("false"));
+    try std.testing.expectEqual(ds.Type.nil, @as(ds.Type, run("nil")));
 }
 
 test "sums" {
