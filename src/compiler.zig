@@ -1,6 +1,7 @@
 const std = @import("std");
 const vm = @import("vm.zig");
 const scan = @import("scanner.zig");
+const ds = @import("ds.zig");
 
 const Chunk = vm.Chunk;
 const OpCode = vm.OpCode;
@@ -21,6 +22,7 @@ const Precedence = enum {
 };
 
 pub const Parser = struct {
+    allocator: *ds.ObjectAllocator,
     current: Token,
     previous: Token,
     scanner: scan.Scanner,
@@ -57,7 +59,7 @@ pub const Parser = struct {
         .{ .prefix = null,     .infix = binary, .precedence = .equality }, //less_equal,
         .{ .prefix = null,     .infix = binary, .precedence = .equality }, //more,
         .{ .prefix = null,     .infix = binary, .precedence = .equality }, //more_equal,
-        .{ .prefix = null,     .infix = null,   .precedence = .none },     //string,
+        .{ .prefix = string,   .infix = null,   .precedence = .none },     //string,
         .{ .prefix = number,   .infix = null,   .precedence = .none },     //number,
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //identifier,
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //and_,
@@ -81,8 +83,9 @@ pub const Parser = struct {
     };
     // zig-fmt: on
 
-    pub fn init(src: []const u8) Self {
+    pub fn init(allocator: *ds.ObjectAllocator, src: []const u8) Self {
         return .{
+            .allocator = allocator,
             .scanner = scan.Scanner.init(src),
             .previous = undefined,
             .current = undefined,
@@ -163,6 +166,12 @@ pub const Parser = struct {
             .nil => try self.emit(&.{@enumToInt(OpCode.nil)}),
             else => unreachable,
         }
+    }
+
+    fn string(self: *Self) !void {
+        const loc = self.previous.loc orelse unreachable;
+        const obj = try self.allocator.allocString(loc[1 .. loc.len - 1]);
+        try self.emit(&.{ @enumToInt(OpCode.constant), try self.chunk.*.addConstant(.{ .object = obj }) });
     }
 
     fn number(self: *Self) !void {

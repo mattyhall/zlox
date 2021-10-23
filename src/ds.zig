@@ -8,12 +8,80 @@ pub const Type = enum {
     number,
     boolean,
     nil,
+    object,
+};
+
+pub const ObjectType = enum {
+    string,
+};
+
+pub const Object = struct {
+    typ: ObjectType,
+    next: ?*Object,
+
+    const Self = @This();
+
+    pub fn toString(self: *Self) *String {
+        return @fieldParentPtr(String, "base", self);
+    }
+
+    pub fn toZigString(self: *Self) []u8 {
+        return self.toString().chars;
+    }
+};
+
+pub const String = struct {
+    base: Object,
+    chars: []u8,
+};
+
+pub const ObjectAllocator = struct {
+    allocator: *Allocator,
+    obj: ?*Object,
+
+    const Self = @This();
+
+    pub fn init(allocator: *Allocator) Self {
+        return Self{ .allocator = allocator, .obj = null };
+    }
+
+    pub fn allocString(self: *Self, chars: []const u8) !*Object {
+        const s = try self.allocator.dupe(u8, chars);
+        var obj = try self.allocator.create(String);
+        obj.base.next = null;
+        obj.base.typ = .string;
+        obj.chars = s;
+        if (self.obj) |old| {
+            old.next = &obj.base;
+            self.obj = &obj.base;
+        } else {
+            self.obj = &obj.base;
+        }
+        return &obj.base;
+    }
+
+    pub fn deinit(self: *Self) void {
+        var obj = self.obj;
+        while (obj) |o| {
+            const next = o.next;
+            switch (o.typ) {
+                .string => {
+                    const s = o.toString();
+                    self.allocator.free(s.chars);
+                    self.allocator.destroy(s);
+                },
+            }
+            obj = next;
+        }
+        self.obj = null;
+    }
 };
 
 pub const Value = union(Type) {
     number: f32,
     boolean: bool,
     nil: u0,
+    object: *Object,
 
     const Self = @This();
 
@@ -22,15 +90,26 @@ pub const Value = union(Type) {
             .number => |n| try writer.print("{d:.[precision]}", .{ .number = n, .precision = FLOAT_PRECISION }),
             .nil => try writer.print("nil", .{}),
             .boolean => |b| try writer.print("{any}", .{b}),
+            .object => |o| switch (o.typ) {
+                .string => try writer.print("\"{s}\"", .{o.toZigString()}),
+            },
         }
     }
 
     pub fn falsey(self: Self) bool {
         return switch (self) {
-            .number => false,
+            .number, .object => false,
             .nil => true,
             .boolean => |b| !b,
         };
+    }
+
+    pub fn toString(self: Self) *String {
+        return self.object.toString();
+    }
+
+    pub fn toZigString(self: Self) []u8 {
+        return self.toString().chars;
     }
 };
 

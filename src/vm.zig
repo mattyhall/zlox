@@ -219,6 +219,13 @@ pub const Vm = struct {
                 .nil => true,
                 .boolean => if (op == .equal) a.boolean == b.boolean else a.boolean != b.boolean,
                 .number => if (op == .equal) a.number == b.number else a.number != b.number,
+                .object => switch (a.object.typ) {
+                    .string => b: {
+                        const as = a.object.toZigString();
+                        const bs = b.object.toZigString();
+                        break :b std.mem.eql(u8, as, bs);
+                    },
+                },
             } });
             return;
         }
