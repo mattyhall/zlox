@@ -45,19 +45,30 @@ pub const ObjectAllocator = struct {
         return Self{ .allocator = allocator, .obj = null };
     }
 
-    pub fn allocString(self: *Self, chars: []const u8) !*Object {
-        const s = try self.allocator.dupe(u8, chars);
+    fn takeString(self: *Self, chars: []u8) !*Object {
         var obj = try self.allocator.create(String);
         obj.base.next = null;
         obj.base.typ = .string;
-        obj.chars = s;
+        obj.chars = chars;
         if (self.obj) |old| {
-            old.next = &obj.base;
+            obj.base.next = old;
             self.obj = &obj.base;
         } else {
             self.obj = &obj.base;
         }
         return &obj.base;
+    }
+
+    pub fn concatenateStrings(self: *Self, a: []const u8, b: []const u8) !*Object {
+        const s = try self.allocator.alloc(u8, a.len + b.len);
+        std.mem.copy(u8, s[0..a.len+1], a);
+        std.mem.copy(u8, s[a.len..], b);
+        return self.takeString(s);
+    }
+
+    pub fn allocString(self: *Self, chars: []const u8) !*Object {
+        const s = try self.allocator.dupe(u8, chars);
+        return self.takeString(s);
     }
 
     pub fn deinit(self: *Self) void {
@@ -101,6 +112,13 @@ pub const Value = union(Type) {
             .number, .object => false,
             .nil => true,
             .boolean => |b| !b,
+        };
+    }
+
+    pub fn isString(self: Self) bool {
+        return switch (self) {
+            .object => true,
+            else => false,
         };
     }
 

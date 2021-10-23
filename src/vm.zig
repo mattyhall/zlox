@@ -163,15 +163,18 @@ pub const InterpretError = error{
 };
 
 pub const Vm = struct {
+    allocator: *ds.ObjectAllocator,
     chunk: ?*const Chunk,
     ip: [*]const u8,
     stack: ds.Stack,
 
     const Self = @This();
-    pub const Error = if (DEBUG_TRACE_EXECUTION) anyerror else InterpretError;
+    // TODO: be cleverer
+    pub const Error = anyerror; //if (DEBUG_TRACE_EXECUTION) anyerror else InterpretError;
 
-    pub fn init() Self {
+    pub fn init(allocator: *ds.ObjectAllocator) Self {
         return .{
+            .allocator = allocator,
             .chunk = null,
             .ip = @intToPtr([*]const u8, 0x8),
             .stack = undefined,
@@ -189,6 +192,13 @@ pub const Vm = struct {
     }
 
     fn runBinaryOp(self: *Self, op: OpCode) Error!void {
+        if (op == .add and self.stack.peek(1).isString() and self.stack.peek(0).isString()) {
+            const b = self.stack.pop().toZigString();
+            const a = self.stack.pop().toZigString();
+            self.stack.push(.{ .object = try self.allocator.concatenateStrings(a, b) });
+            return;
+        }
+
         if (self.stack.peek(1) != .number or self.stack.peek(0) != .number) {
             try self.runtimeError("Operands must be numbers", .{});
             return Error.runtime_error;

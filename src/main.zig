@@ -23,7 +23,7 @@ pub fn main() anyerror!void {
         return;
     try chunk.disassemble("test");
 
-    var v = vm.Vm.init();
+    var v = vm.Vm.init(&obj_allocator);
     _ = try v.interpret(&chunk);
 }
 

@@ -11,7 +11,7 @@ fn run(allocator: *ds.ObjectAllocator, src: []const u8) ds.Value {
     var parser = Parser.init(allocator, src);
     _ = parser.compile(&chunk) catch unreachable;
 
-    var v = vm.Vm.init();
+    var v = vm.Vm.init(allocator);
     const value = v.interpret(&chunk) catch unreachable;
     return value;
 }
@@ -23,7 +23,7 @@ fn fails(allocator: *ds.ObjectAllocator, src: []const u8) !void {
     var parser = Parser.init(allocator, src);
     _ = parser.compile(&chunk) catch unreachable;
 
-    var v = vm.Vm.init();
+    var v = vm.Vm.init(allocator);
     try std.testing.expectError(vm.Vm.Error.runtime_error, v.interpret(&chunk));
 }
 
@@ -43,6 +43,7 @@ test "sums" {
     var alloc = ds.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
+    // Numbers
     try std.testing.expectEqual(ds.Value{ .number = 10.0 }, run(&alloc, "3 + 7"));
     try std.testing.expectEqual(ds.Value{ .number = -4.0 }, run(&alloc, "3 - 7"));
     try std.testing.expectEqual(ds.Value{ .number = 9.0 }, run(&alloc, "3 * (1+2)"));
@@ -53,6 +54,12 @@ test "sums" {
     try fails(&alloc, "true * true");
     try fails(&alloc, "nil - nil");
     try fails(&alloc, "8 + 2 * false");
+
+    // Strings
+    try std.testing.expectEqualStrings("HELLOWORLD", run(&alloc, "\"HELLO\" + \"WORLD\"").toZigString());
+    try std.testing.expectEqualStrings("HELLO WORLD", run(&alloc, "\"HELLO\" + \" \" + \"WORLD\"").toZigString());
+
+    try fails(&alloc, "\"HELLO\" + 2");
 }
 
 test "boolean logic" {
