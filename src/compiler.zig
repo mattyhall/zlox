@@ -265,8 +265,21 @@ pub const Parser = struct {
         }
     }
 
+    fn synchronise(self: *Self) !void {
+        while (self.current.typ != .eof) {
+            if (self.previous.typ == .semicolon) return;
+            switch (self.current.typ) {
+                .class, .fun, .var_, .for_, .if_, .while_, .print, .return_ => return,
+                else => {},
+            }
+            try self.advance();
+        }
+    }
+
     fn declaration(self: *Self) !void {
         try self.statement();
+
+        if (self.panic_mode) try self.synchronise();
     }
 
     pub fn compile(self: *Self, chunk: *Chunk) !bool {
