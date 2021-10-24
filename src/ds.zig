@@ -254,6 +254,16 @@ pub const Stack = struct {
 pub const Entry = struct {
     key: ?*String,
     value: Value,
+
+    const Self = @This();
+
+    fn tombstone(self: *const Self) bool {
+        return self.key == null and self.value == .boolean;
+    }
+
+    fn empty(self: *const Self) bool {
+        return self.key == null and self.value == .nil;
+    }
 };
 
 pub const Table = struct {
@@ -282,16 +292,14 @@ pub const Table = struct {
         var first_tombstone: ?*Entry = null;
         while (true) {
             const entry = &self.buckets[index];
-            const is_tombstone = entry.key == null and entry.value != .nil;
-            const is_empty = entry.key == null and !is_tombstone;
 
-            if (is_empty or entry.key == key) return entry;
+            if (entry.key == key) return entry;
 
-            if (is_tombstone and first_tombstone == null) {
+            if (entry.tombstone() and first_tombstone == null) {
                 first_tombstone = entry;
             }
 
-            if (is_empty) {
+            if (entry.empty()) {
                 return if (first_tombstone) |t| t else entry;
             }
 
@@ -305,9 +313,8 @@ pub const Table = struct {
         var index = hash % self.buckets.len;
         while (true) {
             const entry = &self.buckets[index];
-            const is_empty = entry.key == null and entry.value == .nil;
 
-            if (is_empty) return null;
+            if (entry.empty()) return null;
 
             if (entry.key) |k| {
                 if (k.hash == hash and k.chars.len == key.len and std.mem.eql(u8, k.chars, key))
