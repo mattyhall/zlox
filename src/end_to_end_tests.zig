@@ -83,11 +83,13 @@ test "boolean logic" {
     try std.testing.expectEqual(ds.Value{ .boolean = true }, run(&alloc, "!false == !false"));
     try std.testing.expectEqual(ds.Value{ .boolean = true }, run(&alloc, "!true == !true"));
     try std.testing.expectEqual(ds.Value{ .boolean = true }, run(&alloc, "nil == nil"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run(&alloc, "\"hi\" == \"hi\""));
 
     try std.testing.expectEqual(ds.Value{ .boolean = true }, run(&alloc, "1 != 5"));
     try std.testing.expectEqual(ds.Value{ .boolean = true }, run(&alloc, "1.1 != 1.2"));
     try std.testing.expectEqual(ds.Value{ .boolean = true }, run(&alloc, "true != false"));
     try std.testing.expectEqual(ds.Value{ .boolean = true }, run(&alloc, "!true != !false"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run(&alloc, "\"hi\" != \"hello\""));
 
     // Gt/lt
     try std.testing.expectEqual(ds.Value{ .boolean = true }, run(&alloc, "1.23 < 2.23"));
