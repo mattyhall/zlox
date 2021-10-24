@@ -28,6 +28,7 @@ pub const OpCode = enum(u8) {
     pop,
     define_global,
     get_global,
+    set_global,
 };
 
 const LineInfo = struct {
@@ -106,6 +107,7 @@ pub const Chunk = struct {
             .constant => "CONST",
             .define_global => "DEFG",
             .get_global => "GETG",
+            .set_global => "SETG",
             else => unreachable,
         };
         try stdout.print(" {s:<5} {} ", .{ s, index });
@@ -144,6 +146,7 @@ pub const Chunk = struct {
             .constant,
             .define_global,
             .get_global,
+            .set_global,
             => return self.disassembleConstantInstruction(stdout, offset, instruction),
         }
     }
@@ -335,7 +338,7 @@ pub const Vm = struct {
                 .define_global => {
                     const index = self.readByte();
                     const name = chunk.values.data[index].object.toString();
-                    try self.globals.insert(name, self.stack.peek(0));
+                    _ = try self.globals.insert(name, self.stack.peek(0));
                     _ = self.stack.pop();
                 },
                 .get_global => {
@@ -345,10 +348,19 @@ pub const Vm = struct {
                     if (val) |v| {
                         self.stack.push(v.value);
                     } else {
-                        try self.runtimeError("Undefined variable '{s}'", .{ name.chars });
+                        try self.runtimeError("Undefined variable '{s}'", .{name.chars});
                         return error.runtime_error;
                     }
-                }
+                },
+                .set_global => {
+                    const index = self.readByte();
+                    const name = chunk.values.data[index].object.toString();
+                    if (!try self.globals.insert(name, self.stack.peek(0))) {
+                        self.globals.delete(name);
+                        try self.runtimeError("Undefined global variable '{s}'", .{name.chars});
+                        return error.runtime_error;
+                    }
+                },
             }
             first = false;
         }

@@ -134,6 +134,9 @@ test "basic assignment" {
     try std.testing.expectEqual(ds.Value{ .number = 10.0 }, run(&alloc, "var a = 10; return a;"));
     try std.testing.expectEqual(ds.Value{ .number = 22.0 }, run(&alloc, "var a = 10 * 2 + 7 - 5; return a;"));
     try std.testing.expectEqual(ds.Value{ .boolean = true }, run(&alloc, "var a = true; return a;"));
+    try std.testing.expectEqual(ds.Value{ .number = 0.0 }, run(&alloc, "var a = 10; a = 0; return a;"));
 
     try std.testing.expectEqualStrings("hi", run(&alloc, "var a = \"hi\"; return a;").toZigString());
+
+    try fails(&alloc, "a = 10;");
 }

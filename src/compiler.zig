@@ -196,7 +196,13 @@ pub const Parser = struct {
 
     fn namedVariable(self: *Self, name: *const Token) !void {
         const constant = try self.identifierConstant(name);
-        try self.emit(&.{@enumToInt(OpCode.get_global), constant});
+
+        if (try self.match(.equal)) {
+            try self.expression();
+            try self.emit(&.{ @enumToInt(OpCode.set_global), constant });
+        } else {
+            try self.emit(&.{ @enumToInt(OpCode.get_global), constant });
+        }
     }
 
     fn variable(self: *Self) !void {

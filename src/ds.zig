@@ -82,7 +82,7 @@ pub const ObjectAllocator = struct {
         } else {
             self.obj = &obj.base;
         }
-        try self.string_interner.insert(obj, .nil);
+        _ = try self.string_interner.insert(obj, .nil);
         return &obj.base;
     }
 
@@ -347,25 +347,28 @@ pub const Table = struct {
 
         for (old_buckets) |entry| {
             if (entry.key) |k|
-                try self.insertUnchecked(k, entry.value);
+                _ = try self.insertUnchecked(k, entry.value);
         }
 
         self.allocator.free(old_buckets);
     }
 
-    fn insertUnchecked(self: *Self, key: *String, value: Value) !void {
+    fn insertUnchecked(self: *Self, key: *String, value: Value) !bool {
         var entry = self.findEntry(key);
-        if (entry.key == null)
+        var exists = entry.key != null;
+        if (entry.key == null) {
             self.count += 1;
-        entry.key = key;
+            entry.key = key;
+        }
         entry.value = value;
+        return exists;
     }
 
-    pub fn insert(self: *Self, key: *String, value: Value) !void {
+    pub fn insert(self: *Self, key: *String, value: Value) !bool {
         if (@intToFloat(f32, self.count + 1) / @intToFloat(f32, self.buckets.len) > MAX_LOAD)
             try self.realloc();
 
-        try self.insertUnchecked(key, value);
+        return try self.insertUnchecked(key, value);
     }
 
     pub fn delete(self: *Self, key: *String) void {
@@ -404,7 +407,7 @@ test "table" {
     while (i < 10) : (i += 1) {
         const s = try std.fmt.allocPrint(std.testing.allocator, "{}", .{i});
         const o = try object_allocator.takeString(s);
-        try table.insert(o.toString(), .{ .number = @intToFloat(f32, i) });
+        _ = try table.insert(o.toString(), .{ .number = @intToFloat(f32, i) });
     }
 
     i = 0;
