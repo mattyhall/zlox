@@ -33,7 +33,7 @@ pub const Parser = struct {
     const Self = @This();
 
     const ParseRule = struct {
-        prefix: ?fn (self: *Self) anyerror!void,
+        prefix: ?fn (self: *Self, can_assign: bool) anyerror!void,
         infix: ?fn (self: *Self) anyerror!void,
         precedence: Precedence,
     };
@@ -159,7 +159,8 @@ pub const Parser = struct {
         try self.emit(&.{@enumToInt(OpCode.ret)});
     }
 
-    fn unary(self: *Self) !void {
+    fn unary(self: *Self, can_assign: bool) !void {
+        _ = can_assign;
         const typ = self.previous.typ;
         try self.parsePrecedence(.unary);
         switch (typ) {
@@ -169,7 +170,8 @@ pub const Parser = struct {
         }
     }
 
-    fn literal(self: *Self) !void {
+    fn literal(self: *Self, can_assign: bool) !void {
+        _ = can_assign;
         switch (self.previous.typ) {
             .true_ => try self.emit(&.{@enumToInt(OpCode.true_)}),
             .false_ => try self.emit(&.{@enumToInt(OpCode.false_)}),
@@ -178,13 +180,15 @@ pub const Parser = struct {
         }
     }
 
-    fn string(self: *Self) !void {
+    fn string(self: *Self, can_assign: bool) !void {
+        _ = can_assign;
         const loc = self.previous.loc orelse unreachable;
         const obj = try self.allocator.allocString(loc[1 .. loc.len - 1]);
         try self.emit(&.{ @enumToInt(OpCode.constant), try self.chunk.*.addConstant(.{ .object = obj }) });
     }
 
-    fn number(self: *Self) !void {
+    fn number(self: *Self, can_assign: bool) !void {
+        _ = can_assign;
         const num = try std.fmt.parseFloat(f32, self.previous.loc orelse unreachable);
         try self.emit(&.{ @enumToInt(OpCode.constant), try self.chunk.*.addConstant(.{ .number = num }) });
     }
@@ -194,10 +198,10 @@ pub const Parser = struct {
         return try self.chunk.*.addConstant(.{ .object = obj });
     }
 
-    fn namedVariable(self: *Self, name: *const Token) !void {
+    fn namedVariable(self: *Self, name: *const Token, can_assign: bool) !void {
         const constant = try self.identifierConstant(name);
 
-        if (try self.match(.equal)) {
+        if (can_assign and try self.match(.equal)) {
             try self.expression();
             try self.emit(&.{ @enumToInt(OpCode.set_global), constant });
         } else {
@@ -205,8 +209,8 @@ pub const Parser = struct {
         }
     }
 
-    fn variable(self: *Self) !void {
-        try self.namedVariable(&self.previous);
+    fn variable(self: *Self, can_assign: bool) !void {
+        try self.namedVariable(&self.previous, can_assign);
     }
 
     fn binary(self: *Self) !void {
@@ -235,13 +239,18 @@ pub const Parser = struct {
             try self.err("Expect expression");
             return;
         }
-        try rule.?(self);
+
+        const can_assign = @enumToInt(precedence) <= @enumToInt(Precedence.assignment);
+        try rule.?(self, can_assign);
 
         while (@enumToInt(precedence) <= @enumToInt(rules[@enumToInt(self.current.typ)].precedence)) {
             try self.advance();
             const infix_rule = rules[@enumToInt(self.previous.typ)].infix;
             try infix_rule.?(self);
         }
+
+        if (can_assign and try self.match(.equal))
+            try self.err("Invalid assignment target");
     }
 
     fn parseUnary(self: *Self) !void {
@@ -252,7 +261,8 @@ pub const Parser = struct {
         try self.parsePrecedence(.assignment);
     }
 
-    fn grouping(self: *Self) !void {
+    fn grouping(self: *Self, can_assign: bool) !void {
+        _ = can_assign;
         try self.expression();
         try self.consume(.right_paren, "Expect ')' after expression");
     }

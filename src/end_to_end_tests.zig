@@ -31,7 +31,7 @@ fn fails(allocator: *ds.ObjectAllocator, src: []const u8) !void {
     defer chunk.deinit();
 
     var parser = Parser.init(allocator, src);
-    _ = parser.compile(&chunk) catch unreachable;
+    if (parser.compile(&chunk) catch unreachable) return;
 
     var v = try vm.Vm.init(allocator);
     defer v.deinit();
@@ -137,6 +137,8 @@ test "basic assignment" {
     try std.testing.expectEqual(ds.Value{ .number = 0.0 }, run(&alloc, "var a = 10; a = 0; return a;"));
 
     try std.testing.expectEqualStrings("hi", run(&alloc, "var a = \"hi\"; return a;").toZigString());
+    try std.testing.expectEqualStrings("hello, world", run(&alloc, "var a = \"hello\"; a = a + \", world\"; return a;").toZigString());
 
     try fails(&alloc, "a = 10;");
+    try fails(&alloc, "1 * 2 = 3 + 4;");
 }
