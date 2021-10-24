@@ -28,7 +28,7 @@ fn fails(allocator: *ds.ObjectAllocator, src: []const u8) !void {
 }
 
 test "literals" {
-    var alloc = ds.ObjectAllocator.init(std.testing.allocator);
+    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
     try std.testing.expectEqual(ds.Value{ .number = -2 }, run(&alloc, "-2"));
@@ -40,7 +40,7 @@ test "literals" {
 }
 
 test "sums" {
-    var alloc = ds.ObjectAllocator.init(std.testing.allocator);
+    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
     // Numbers
@@ -63,7 +63,7 @@ test "sums" {
 }
 
 test "boolean logic" {
-    var alloc = ds.ObjectAllocator.init(std.testing.allocator);
+    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
     // Not

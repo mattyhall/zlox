@@ -13,8 +13,11 @@ pub fn main() anyerror!void {
     var chunk = vm.Chunk.init(&alloc.allocator);
     defer chunk.deinit();
 
-    var obj_allocator = ds.ObjectAllocator.init(&alloc.allocator);
+    var obj_allocator = try ds.ObjectAllocator.init(&alloc.allocator);
     defer obj_allocator.deinit();
+
+    var table = try ds.Table.init(&alloc.allocator);
+    defer table.deinit();
 
     const src = "1 + 3 * 2 / -7";
     std.log.debug("{s}", .{src});
