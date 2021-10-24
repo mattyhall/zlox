@@ -265,6 +265,30 @@ pub const Parser = struct {
         }
     }
 
+    fn parseVariable(self: *Self, msg: []const u8) !u8 {
+        try self.consume(.identifier, msg);
+        const obj = try self.allocator.allocString(self.previous.loc.?);
+        return try self.chunk.*.addConstant(.{ .object = obj });
+    }
+
+    fn defineVariable(self: *Self, constant: u8) !void {
+        try self.emit(&.{ @enumToInt(OpCode.define_global), constant });
+    }
+
+    fn varDecl(self: *Self) !void {
+        const global = try self.parseVariable("Expect variable name");
+
+        if (try self.match(.equal)) {
+            try self.expression();
+        } else {
+            try self.emit(&.{@enumToInt(OpCode.nil)});
+        }
+
+        try self.consume(.semicolon, "Expect ';' after variable declaration");
+
+        try self.defineVariable(global);
+    }
+
     fn synchronise(self: *Self) !void {
         while (self.current.typ != .eof) {
             if (self.previous.typ == .semicolon) return;
@@ -277,7 +301,11 @@ pub const Parser = struct {
     }
 
     fn declaration(self: *Self) !void {
-        try self.statement();
+        if (try self.match(.var_)) {
+            try self.varDecl();
+        } else {
+            try self.statement();
+        }
 
         if (self.panic_mode) try self.synchronise();
     }

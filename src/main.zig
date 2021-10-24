@@ -26,7 +26,9 @@ pub fn main() anyerror!void {
         return;
     try chunk.disassemble("test");
 
-    var v = vm.Vm.init(&obj_allocator);
+    var v = try vm.Vm.init(&obj_allocator);
+    defer v.deinit();
+
     _ = try v.interpret(&chunk);
 }
 

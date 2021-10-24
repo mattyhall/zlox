@@ -26,6 +26,7 @@ pub const OpCode = enum(u8) {
     less_equal,
     print,
     pop,
+    define_global,
 };
 
 const LineInfo = struct {
@@ -132,6 +133,14 @@ pub const Chunk = struct {
                 try stdout.print("\n", .{});
                 return offset + 2;
             },
+            .define_global => {
+                const index = self.code.data[offset + 1];
+                const val = self.values.data[index];
+                try stdout.print(" {s:<5} {} ", .{ "DEFG", index });
+                try val.print(stdout);
+                try stdout.print("\n", .{});
+                return offset + 2;
+            }
         }
     }
 
@@ -173,17 +182,19 @@ pub const Vm = struct {
     chunk: ?*const Chunk,
     ip: [*]const u8,
     stack: ds.Stack,
+    globals: ds.Table,
 
     const Self = @This();
     // TODO: be cleverer
     pub const Error = anyerror; //if (DEBUG_TRACE_EXECUTION) anyerror else InterpretError;
 
-    pub fn init(allocator: *ds.ObjectAllocator) Self {
-        return .{
+    pub fn init(allocator: *ds.ObjectAllocator) !Self {
+        return Self{
             .allocator = allocator,
             .chunk = null,
             .ip = @intToPtr([*]const u8, 0x8),
             .stack = undefined,
+            .globals = try ds.Table.init(allocator.allocator),
         };
     }
 
@@ -317,6 +328,12 @@ pub const Vm = struct {
                     try stdout.print("\n", .{});
                 },
                 .pop => _ = self.stack.pop(),
+                .define_global => {
+                    const index = self.readByte();
+                    const name = chunk.values.data[index].object.toString();
+                    try self.globals.insert(name, self.stack.peek(0));
+                    _ = self.stack.pop();
+                },
             }
             first = false;
         }
@@ -326,5 +343,9 @@ pub const Vm = struct {
         self.chunk = chunk;
         self.ip = chunk.code.data;
         return try self.run();
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.globals.deinit();
     }
 };

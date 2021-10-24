@@ -19,7 +19,9 @@ fn run(allocator: *ds.ObjectAllocator, src: []const u8) ds.Value {
     var parser = Parser.init(allocator, src);
     _ = parser.compile(&chunk) catch unreachable;
 
-    var v = vm.Vm.init(allocator);
+    var v = vm.Vm.init(allocator) catch unreachable;
+    defer v.deinit();
+
     const value = v.interpret(&chunk) catch unreachable;
     return value;
 }
@@ -31,7 +33,9 @@ fn fails(allocator: *ds.ObjectAllocator, src: []const u8) !void {
     var parser = Parser.init(allocator, src);
     _ = parser.compile(&chunk) catch unreachable;
 
-    var v = vm.Vm.init(allocator);
+    var v = try vm.Vm.init(allocator);
+    defer v.deinit();
+
     try std.testing.expectError(vm.Vm.Error.runtime_error, v.interpret(&chunk));
 }
 
@@ -120,4 +124,16 @@ test "basic statements" {
     _ = run(&alloc, "1;            return nil;");
     _ = run(&alloc, "1 + 7 * 2;    return nil;");
     _ = run(&alloc, "print \"hi\"; return nil");
+}
+
+test "basic assignment" {
+    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    defer alloc.deinit();
+
+    // return nil so that it terminates
+    _ = run(&alloc, "var a;                  return nil;");
+    _ = run(&alloc, "var a = 10;             return nil;");
+    _ = run(&alloc, "var a = 10 * 2 + 7 - 5; return nil;");
+    _ = run(&alloc, "var a = \"hi\";         return nil;");
+    _ = run(&alloc, "var a = true;           return nil;");
 }
