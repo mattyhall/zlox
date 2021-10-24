@@ -130,10 +130,10 @@ test "basic assignment" {
     var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
-    // return nil so that it terminates
-    _ = run(&alloc, "var a;                  return nil;");
-    _ = run(&alloc, "var a = 10;             return nil;");
-    _ = run(&alloc, "var a = 10 * 2 + 7 - 5; return nil;");
-    _ = run(&alloc, "var a = \"hi\";         return nil;");
-    _ = run(&alloc, "var a = true;           return nil;");
+    try std.testing.expectEqual(ds.Type.nil, run(&alloc, "var a; return a;"));
+    try std.testing.expectEqual(ds.Value{ .number = 10.0 }, run(&alloc, "var a = 10; return a;"));
+    try std.testing.expectEqual(ds.Value{ .number = 22.0 }, run(&alloc, "var a = 10 * 2 + 7 - 5; return a;"));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run(&alloc, "var a = true; return a;"));
+
+    try std.testing.expectEqualStrings("hi", run(&alloc, "var a = \"hi\"; return a;").toZigString());
 }

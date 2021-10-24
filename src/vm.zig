@@ -27,6 +27,7 @@ pub const OpCode = enum(u8) {
     print,
     pop,
     define_global,
+    get_global,
 };
 
 const LineInfo = struct {
@@ -98,6 +99,21 @@ pub const Chunk = struct {
         return offset + 1;
     }
 
+    fn disassembleConstantInstruction(self: *const Self, stdout: anytype, offset: usize, instruction: OpCode) !usize {
+        const index = self.code.data[offset + 1];
+        const val = self.values.data[index];
+        const s = switch (instruction) {
+            .constant => "CONST",
+            .define_global => "DEFG",
+            .get_global => "GETG",
+            else => unreachable,
+        };
+        try stdout.print(" {s:<5} {} ", .{ s, index });
+        try val.print(stdout);
+        try stdout.print("\n", .{});
+        return offset + 2;
+    }
+
     fn disassembleInstruction(self: *const Self, stdout: anytype, offset: usize, line: LineDissasemble) !usize {
         try stdout.print("{x:0>4} ", .{offset});
         switch (line) {
@@ -125,22 +141,10 @@ pub const Chunk = struct {
             .print,
             .pop,
             => return disassembleByteInstruction(stdout, offset, instruction),
-            .constant => {
-                const index = self.code.data[offset + 1];
-                const val = self.values.data[index];
-                try stdout.print(" {s:<5} {} ", .{ "CONST", index });
-                try val.print(stdout);
-                try stdout.print("\n", .{});
-                return offset + 2;
-            },
-            .define_global => {
-                const index = self.code.data[offset + 1];
-                const val = self.values.data[index];
-                try stdout.print(" {s:<5} {} ", .{ "DEFG", index });
-                try val.print(stdout);
-                try stdout.print("\n", .{});
-                return offset + 2;
-            }
+            .constant,
+            .define_global,
+            .get_global,
+            => return self.disassembleConstantInstruction(stdout, offset, instruction),
         }
     }
 
@@ -334,6 +338,17 @@ pub const Vm = struct {
                     try self.globals.insert(name, self.stack.peek(0));
                     _ = self.stack.pop();
                 },
+                .get_global => {
+                    const index = self.readByte();
+                    const name = chunk.values.data[index].object.toString();
+                    const val = self.globals.find(name);
+                    if (val) |v| {
+                        self.stack.push(v.value);
+                    } else {
+                        try self.runtimeError("Undefined variable '{s}'", .{ name.chars });
+                        return error.runtime_error;
+                    }
+                }
             }
             first = false;
         }

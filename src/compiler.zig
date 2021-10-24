@@ -38,7 +38,7 @@ pub const Parser = struct {
         precedence: Precedence,
     };
 
-    // zig-fmt: off
+    // zig fmt: off
     const rules = [_]ParseRule{
         .{ .prefix = grouping, .infix = null,   .precedence = .none },     //left_paren,
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //right_paren,
@@ -61,7 +61,7 @@ pub const Parser = struct {
         .{ .prefix = null,     .infix = binary, .precedence = .equality }, //more_equal,
         .{ .prefix = string,   .infix = null,   .precedence = .none },     //string,
         .{ .prefix = number,   .infix = null,   .precedence = .none },     //number,
-        .{ .prefix = null,     .infix = null,   .precedence = .none },     //identifier,
+        .{ .prefix = variable, .infix = null,   .precedence = .none },     //identifier,
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //and_,
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //class,
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //else_,
@@ -81,7 +81,7 @@ pub const Parser = struct {
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //eof,
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //err,
     };
-    // zig-fmt: on
+    // zig fmt: on
 
     pub fn init(allocator: *ds.ObjectAllocator, src: []const u8) Self {
         return .{
@@ -189,6 +189,20 @@ pub const Parser = struct {
         try self.emit(&.{ @enumToInt(OpCode.constant), try self.chunk.*.addConstant(.{ .number = num }) });
     }
 
+    fn identifierConstant(self: *Self, token: *const Token) !u8 {
+        const obj = try self.allocator.allocString(token.loc.?);
+        return try self.chunk.*.addConstant(.{ .object = obj });
+    }
+
+    fn namedVariable(self: *Self, name: *const Token) !void {
+        const constant = try self.identifierConstant(name);
+        try self.emit(&.{@enumToInt(OpCode.get_global), constant});
+    }
+
+    fn variable(self: *Self) !void {
+        try self.namedVariable(&self.previous);
+    }
+
     fn binary(self: *Self) !void {
         const op = self.previous.typ;
         const rule = rules[@enumToInt(op)];
@@ -267,8 +281,7 @@ pub const Parser = struct {
 
     fn parseVariable(self: *Self, msg: []const u8) !u8 {
         try self.consume(.identifier, msg);
-        const obj = try self.allocator.allocString(self.previous.loc.?);
-        return try self.chunk.*.addConstant(.{ .object = obj });
+        return try self.identifierConstant(&self.previous);
     }
 
     fn defineVariable(self: *Self, constant: u8) !void {
