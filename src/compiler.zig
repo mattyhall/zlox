@@ -129,6 +129,16 @@ pub const Parser = struct {
         try self.errorAtCurrent(msg);
     }
 
+    fn check(self: *Self, typ: scan.TokenType) bool {
+        return self.current.typ == typ;
+    }
+
+    fn match(self: *Self, typ: scan.TokenType) !bool {
+        if (!self.check(typ)) return false;
+        try self.advance();
+        return true;
+    }
+
     fn emit(self: *Self, bytes: []const u8) !void {
         for (bytes) |b| {
             try self.chunk.*.writeChunk(b, self.previous.line);
@@ -227,11 +237,28 @@ pub const Parser = struct {
         try self.consume(.right_paren, "Expect ')' after expression");
     }
 
+    fn printStatement(self: *Self) !void {
+        try self.expression();
+        try self.consume(.semicolon, "Expect ';' after value");
+        try self.emit(&.{@enumToInt(OpCode.print)});
+    }
+
+    fn statement(self: *Self) !void {
+        if (try self.match(.print)) {
+            try self.printStatement();
+        }
+    }
+
+    fn declaration(self: *Self) !void {
+        try self.statement();
+    }
+
     pub fn compile(self: *Self, chunk: *Chunk) !bool {
         self.chunk = chunk;
         try self.advance();
-        try self.expression();
-        try self.consume(.eof, "Expect end of expression");
+        while (!(try self.match(.eof))) {
+            try self.declaration();
+        }
         try self.emitReturn();
         return self.had_error;
     }

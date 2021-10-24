@@ -24,6 +24,7 @@ pub const OpCode = enum(u8) {
     greater_equal,
     less,
     less_equal,
+    print,
 };
 
 const LineInfo = struct {
@@ -87,6 +88,7 @@ pub const Chunk = struct {
             .greater_equal => "GTE",
             .less => "LT",
             .less_equal => "LTE",
+            .print => "PRINT",
             else => unreachable,
         };
         try stdout.print(" {s:<5}\n", .{s});
@@ -117,6 +119,7 @@ pub const Chunk = struct {
             .greater_equal,
             .less,
             .less_equal,
+            .print,
             => return disassembleByteInstruction(stdout, offset, instruction),
             .constant => {
                 const index = self.code.data[offset + 1];
@@ -310,6 +313,11 @@ pub const Vm = struct {
                 .nil => self.stack.push(.{ .nil = undefined }),
                 .add, .subtract, .multiply, .divide => try self.runBinaryOp(op),
                 .equal, .not_equal, .less, .less_equal, .greater, .greater_equal => try self.runBoolBinaryOp(op),
+                .print => {
+                    const val = self.stack.pop();
+                    try val.print(stdout);
+                    try stdout.print("\n", .{});
+                }
             }
             first = false;
         }
