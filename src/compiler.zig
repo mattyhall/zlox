@@ -243,9 +243,17 @@ pub const Parser = struct {
         try self.emit(&.{@enumToInt(OpCode.print)});
     }
 
+    fn returnStatement(self: *Self) !void {
+        try self.expression();
+        try self.consume(.semicolon, "Expect ';' after value");
+        try self.emit(&.{@enumToInt(OpCode.ret)});
+    }
+
     fn statement(self: *Self) !void {
         if (try self.match(.print)) {
             try self.printStatement();
+        } else if (try self.match(.return_)) {
+            try self.returnStatement();
         }
     }
 
@@ -259,7 +267,6 @@ pub const Parser = struct {
         while (!(try self.match(.eof))) {
             try self.declaration();
         }
-        try self.emitReturn();
         return self.had_error;
     }
 };

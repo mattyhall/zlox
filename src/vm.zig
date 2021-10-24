@@ -292,12 +292,7 @@ pub const Vm = struct {
                     const index = self.readByte();
                     self.stack.push(chunk.values.data[index]);
                 },
-                .ret => {
-                    const val = self.stack.pop();
-                    try val.print(stdout);
-                    try stdout.print("\n", .{});
-                    return val;
-                },
+                .ret => return self.stack.pop(),
                 .negate => {
                     if (self.stack.peek(0) != .number) {
                         try self.runtimeError("Operand must be a number", .{});

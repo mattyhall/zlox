@@ -405,7 +405,6 @@ test "table" {
         const s = try std.fmt.allocPrint(std.testing.allocator, "{}", .{i});
         const o = try object_allocator.takeString(s);
         try table.insert(o.toString(), .{ .number = @intToFloat(f32, i) });
-        try table.print();
     }
 
     i = 0;
@@ -423,7 +422,6 @@ test "table" {
         const s = try std.fmt.allocPrint(std.testing.allocator, "{}", .{i});
         const o = try object_allocator.takeString(s);
         table.delete(o.toString());
-        try table.print();
     }
 
     i = 0;
