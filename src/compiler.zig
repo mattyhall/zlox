@@ -249,11 +249,19 @@ pub const Parser = struct {
         try self.emit(&.{@enumToInt(OpCode.ret)});
     }
 
+    fn expressionStatement(self: *Self) !void {
+        try self.expression();
+        try self.consume(.semicolon, "Expect ';' after expression");
+        try self.emit(&.{@enumToInt(OpCode.pop)});
+    }
+
     fn statement(self: *Self) !void {
         if (try self.match(.print)) {
             try self.printStatement();
         } else if (try self.match(.return_)) {
             try self.returnStatement();
+        } else {
+            try self.expressionStatement();
         }
     }
 

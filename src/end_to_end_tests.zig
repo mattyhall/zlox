@@ -111,3 +111,13 @@ test "boolean logic" {
     try failsExpr(&alloc, "1 > false");
     try failsExpr(&alloc, "nil < nil");
 }
+
+test "basic statements" {
+    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    defer alloc.deinit();
+
+    // return nil so that it terminates
+    _ = run(&alloc, "1;            return nil;");
+    _ = run(&alloc, "1 + 7 * 2;    return nil;");
+    _ = run(&alloc, "print \"hi\"; return nil");
+}

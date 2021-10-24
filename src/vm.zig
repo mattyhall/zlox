@@ -25,6 +25,7 @@ pub const OpCode = enum(u8) {
     less,
     less_equal,
     print,
+    pop,
 };
 
 const LineInfo = struct {
@@ -89,6 +90,7 @@ pub const Chunk = struct {
             .less => "LT",
             .less_equal => "LTE",
             .print => "PRINT",
+            .pop => "POP",
             else => unreachable,
         };
         try stdout.print(" {s:<5}\n", .{s});
@@ -120,6 +122,7 @@ pub const Chunk = struct {
             .less,
             .less_equal,
             .print,
+            .pop,
             => return disassembleByteInstruction(stdout, offset, instruction),
             .constant => {
                 const index = self.code.data[offset + 1];
@@ -312,7 +315,8 @@ pub const Vm = struct {
                     const val = self.stack.pop();
                     try val.print(stdout);
                     try stdout.print("\n", .{});
-                }
+                },
+                .pop => _ = self.stack.pop(),
             }
             first = false;
         }
