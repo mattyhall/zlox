@@ -44,6 +44,20 @@ pub const Locals = struct {
     }
 };
 
+const Jmp = struct {
+    chunk: *Chunk,
+    start: usize,
+
+    const Self = @This();
+
+    fn set(self: *Self) void {
+        var code = self.chunk.code;
+        const diff = @intCast(u16, code.count - self.start - 2);
+        code.data[self.start] = @intCast(u8, diff >> 8);
+        code.data[self.start + 1] = @intCast(u8, diff & 0xff);
+    }
+};
+
 pub const Parser = struct {
     allocator: *ds.ObjectAllocator,
     current: Token,
@@ -358,7 +372,25 @@ pub const Parser = struct {
         }
     }
 
-    fn statement(self: *Self) !void {
+    fn emitJump(self: *Self, op: OpCode) !Jmp {
+        try self.emit(&.{ @enumToInt(op), 0x00, 0x00 });
+        return Jmp{
+            .chunk = self.chunk,
+            .start = self.chunk.code.count - 2,
+        };
+    }
+
+    fn ifStatement(self: *Self) !void {
+        try self.consume(.left_paren, "Expected '(' after if");
+        try self.expression();
+        try self.consume(.right_paren, "Expected ')' after if condition");
+
+        var jmp = try self.emitJump(.jump_false);
+        try self.statement();
+        jmp.set();
+    }
+
+    fn statement(self: *Self) anyerror!void {
         if (try self.match(.print)) {
             try self.printStatement();
         } else if (try self.match(.return_)) {
@@ -367,6 +399,8 @@ pub const Parser = struct {
             self.beginScope();
             try self.block();
             try self.endScope();
+        } else if (try self.match(.if_)) {
+            try self.ifStatement();
         } else {
             try self.expressionStatement();
         }

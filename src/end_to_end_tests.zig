@@ -197,3 +197,17 @@ test "local assignment" {
         \\ }
     );
 }
+
+test "ifs" {
+    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    defer alloc.deinit();
+
+    try std.testing.expectEqual(ds.Value{ .number = 1.0 }, run(&alloc,
+        \\ if (false) return 0.0;
+        \\ return 1.0;
+    ));
+    try std.testing.expectEqual(ds.Value{ .number = 0.0 }, run(&alloc,
+        \\ if (true) return 0.0;
+        \\ return 1.0;
+    ));
+}

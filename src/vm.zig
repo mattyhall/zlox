@@ -31,6 +31,7 @@ pub const OpCode = enum(u8) {
     set_global,
     get_local,
     set_local,
+    jump_false,
 };
 
 const LineInfo = struct {
@@ -130,6 +131,17 @@ pub const Chunk = struct {
         return offset + 2;
     }
 
+    fn disassembleJump(self: *const Self, stdout: anytype, offset: usize, instruction: OpCode) !usize {
+        const jmp_offset = @intCast(u16, self.code.data[offset + 1]) << 8 | @intCast(u16, self.code.data[offset + 2]);
+        const s = switch (instruction) {
+            .jump_false => "JMPF",
+            else => unreachable,
+        };
+        try stdout.print(" {s:<5} {:>4} ", .{ s, jmp_offset });
+        try stdout.print("\n", .{});
+        return offset + 3;
+    }
+
     fn disassembleInstruction(self: *const Self, stdout: anytype, offset: usize, line: LineDissasemble) !usize {
         try stdout.print("{x:0>4} ", .{offset});
         switch (line) {
@@ -165,6 +177,7 @@ pub const Chunk = struct {
             .get_local,
             .set_local
             => return self.disassembleByteInstruction(stdout, offset, instruction),
+            .jump_false => return self.disassembleJump(stdout, offset, instruction),
         }
     }
 
@@ -385,6 +398,12 @@ pub const Vm = struct {
                 .set_local => {
                     const index = self.readByte();
                     self.stack.data[index] = self.stack.peek(0);
+                },
+                .jump_false => {
+                    const offset = @intCast(u16, self.readByte()) << 8 | @intCast(u16, self.readByte());
+                    if (self.stack.pop().falsey()) {
+                        self.ip += offset;
+                    }
                 }
             }
             first = false;
