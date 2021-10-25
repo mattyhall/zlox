@@ -1,6 +1,7 @@
 # Fixes
 * Fill out error handling
 * Larger stack
+* More locals
  
 # Optimisation
 * Add a two byte instruction for loading a number 0..255
@@ -12,6 +13,8 @@
 * Arrays
 * Hashmaps
   * Will require making the hashmap generic on its key
+* Constants
+* Continue/break in loops
 
 # Testing
 * Assert the state of the global variables
