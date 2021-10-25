@@ -126,7 +126,7 @@ test "basic statements" {
     _ = run(&alloc, "print \"hi\"; return nil");
 }
 
-test "basic assignment" {
+test "global assignment" {
     var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
@@ -141,4 +141,51 @@ test "basic assignment" {
 
     try fails(&alloc, "a = 10;");
     try fails(&alloc, "1 * 2 = 3 + 4;");
+}
+
+test "local assignment" {
+    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    defer alloc.deinit();
+
+    try std.testing.expectEqual(ds.Type.nil, run(&alloc, "{ var a; return a; }"));
+    try std.testing.expectEqual(ds.Value{ .number = 0.0 }, run(&alloc, "{ var a = true; a = 0; return a; }"));
+    try std.testing.expectEqual(ds.Value{ .number = 0.0 }, run(&alloc,
+        \\ {
+        \\   var a = true;
+        \\   {
+        \\     var a = 0;
+        \\     return a;
+        \\   }
+        \\ }
+    ));
+    try std.testing.expectEqual(ds.Value{ .boolean = true }, run(&alloc,
+        \\ {
+        \\   var a = true;
+        \\   {
+        \\     var a = 0;
+        \\   }
+        \\   return a;
+        \\ }
+    ));
+    try std.testing.expectEqualStrings("good morning", run(&alloc,
+        \\ {
+        \\   var res;
+        \\   var adjective = "good";
+        \\   {
+        \\     var time_of_day = "morning";
+        \\     res = adjective + " " + time_of_day;
+        \\   }
+        \\   return res;
+        \\ }
+    ).toZigString());
+
+    try fails(&alloc, "{ var a = 10; var a = 20; }");
+    try fails(&alloc,
+        \\ {
+        \\   {
+        \\     var a = 10;
+        \\   }
+        \\   return a;
+        \\ }
+    );
 }

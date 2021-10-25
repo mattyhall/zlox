@@ -7,6 +7,8 @@ const Chunk = vm.Chunk;
 const OpCode = vm.OpCode;
 const Token = scan.Token;
 
+const LOCAL_COUNT: usize = 256;
+
 const Precedence = enum {
     none,
     assignment, // =
@@ -21,6 +23,27 @@ const Precedence = enum {
     primary,
 };
 
+fn identifiersEql(a: *const Token, b: *const Token) bool {
+    return a.loc.?.len == b.loc.?.len and std.mem.eql(u8, a.loc.?, b.loc.?);
+}
+
+pub const Local = struct {
+    name: Token,
+    depth: isize,
+};
+
+pub const Locals = struct {
+  locals: [LOCAL_COUNT]Local,
+  count: usize,
+  depth: isize,
+
+  const Self = @This();
+
+  fn init() Self {
+      return .{ .locals = undefined, .count = 0, .depth = 0 };
+  }
+};
+
 pub const Parser = struct {
     allocator: *ds.ObjectAllocator,
     current: Token,
@@ -29,6 +52,7 @@ pub const Parser = struct {
     had_error: bool,
     panic_mode: bool,
     chunk: *Chunk,
+    locals: Locals,
 
     const Self = @This();
 
@@ -92,6 +116,7 @@ pub const Parser = struct {
             .had_error = false,
             .panic_mode = false,
             .chunk = undefined,
+            .locals = Locals.init(),
         };
     }
 
@@ -198,14 +223,38 @@ pub const Parser = struct {
         return try self.chunk.*.addConstant(.{ .object = obj });
     }
 
+    fn resolveLocal(self: *const Self, name: *const Token) ?u8 {
+        if (self.locals.count == 0) return null;
+
+        var i = @intCast(isize, self.locals.count - 1);
+        while (i >= 0) : (i -= 1) {
+            const local = &self.locals.locals[@intCast(usize, i)];
+            if (identifiersEql(name, &local.name)) {
+                return @intCast(u8, i);
+            }
+        }
+        return null;
+    }
+
     fn namedVariable(self: *Self, name: *const Token, can_assign: bool) !void {
-        const constant = try self.identifierConstant(name);
+        var get: OpCode = undefined;
+        var set: OpCode = undefined;
+
+        var arg = self.resolveLocal(name);
+        if (arg != null) {
+            get = .get_local;
+            set = .set_local;
+        } else {
+            get = .get_global;
+            set = .set_global;
+            arg = try self.identifierConstant(name);
+        }
 
         if (can_assign and try self.match(.equal)) {
             try self.expression();
-            try self.emit(&.{ @enumToInt(OpCode.set_global), constant });
+            try self.emit(&.{ @enumToInt(set), arg.? });
         } else {
-            try self.emit(&.{ @enumToInt(OpCode.get_global), constant });
+            try self.emit(&.{ @enumToInt(get), arg.? });
         }
     }
 
@@ -285,22 +334,78 @@ pub const Parser = struct {
         try self.emit(&.{@enumToInt(OpCode.pop)});
     }
 
+    fn block(self: *Self) anyerror!void {
+        while (!self.check(.right_brace) and !self.check(.eof)) {
+            try self.declaration();
+        }
+
+        try self.consume(.right_brace, "Expect '}' after block");
+    }
+
+    fn beginScope(self: *Self) void {
+        self.locals.depth += 1;
+    }
+
+    fn endScope(self: *Self) !void {
+        self.locals.depth -= 1;
+
+        while (self.locals.count > 0 and self.locals.locals[self.locals.count - 1].depth > self.locals.depth) {
+            try self.emit(&.{@enumToInt(OpCode.pop)});
+            self.locals.count -= 1;
+        }
+    }
+
     fn statement(self: *Self) !void {
         if (try self.match(.print)) {
             try self.printStatement();
         } else if (try self.match(.return_)) {
             try self.returnStatement();
+        } else if (try self.match(.left_brace)) {
+            self.beginScope();
+            try self.block();
+            try self.endScope();
         } else {
             try self.expressionStatement();
         }
     }
 
+    fn addLocal(self: *Self, token: Token) !void {
+        if (self.locals.count >= LOCAL_COUNT) {
+            try self.err("Too many local variables");
+            return;
+        }
+        var local = &self.locals.locals[self.locals.count];
+        self.locals.count += 1;
+        local.depth = self.locals.depth;
+        local.name = token;
+    }
+
+    fn declareVariable(self: *Self) !void {
+        var i: isize = @intCast(isize, self.locals.count) - 1;
+        while (i >= 0) : (i -= 1) {
+            const local = &self.locals.locals[@intCast(usize, i)];
+            if (local.depth != -1 and local.depth < self.locals.depth)
+                break;
+            if (identifiersEql(&local.name, &self.previous)) {
+                try self.err("Already a variable with this name in this scope");
+                return;
+            }
+        }
+        try self.addLocal(self.previous);
+    }
+
     fn parseVariable(self: *Self, msg: []const u8) !u8 {
         try self.consume(.identifier, msg);
+
+        try self.declareVariable();
+        if (self.locals.depth > 0) return 0;
+
         return try self.identifierConstant(&self.previous);
     }
 
     fn defineVariable(self: *Self, constant: u8) !void {
+        if (self.locals.depth > 0) return;
+
         try self.emit(&.{ @enumToInt(OpCode.define_global), constant });
     }
 
@@ -329,7 +434,7 @@ pub const Parser = struct {
         }
     }
 
-    fn declaration(self: *Self) !void {
+    fn declaration(self: *Self) anyerror!void {
         if (try self.match(.var_)) {
             try self.varDecl();
         } else {

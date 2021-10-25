@@ -29,6 +29,8 @@ pub const OpCode = enum(u8) {
     define_global,
     get_global,
     set_global,
+    get_local,
+    set_local,
 };
 
 const LineInfo = struct {
@@ -74,7 +76,7 @@ pub const Chunk = struct {
         try self.code.append(byte);
     }
 
-    fn disassembleByteInstruction(stdout: anytype, offset: usize, instruction: OpCode) !usize {
+    fn disassembleSimpleInstruction(stdout: anytype, offset: usize, instruction: OpCode) !usize {
         const s = switch (instruction) {
             .ret => "RET",
             .negate => "NEGATE",
@@ -116,6 +118,18 @@ pub const Chunk = struct {
         return offset + 2;
     }
 
+    fn disassembleByteInstruction(self: *const Self, stdout: anytype, offset: usize, instruction: OpCode) !usize {
+        const index = self.code.data[offset + 1];
+        const s = switch (instruction) {
+            .get_local => "GETL",
+            .set_local => "SETL",
+            else => unreachable,
+        };
+        try stdout.print(" {s:<5} {:>4} ", .{ s, index });
+        try stdout.print("\n", .{});
+        return offset + 2;
+    }
+
     fn disassembleInstruction(self: *const Self, stdout: anytype, offset: usize, line: LineDissasemble) !usize {
         try stdout.print("{x:0>4} ", .{offset});
         switch (line) {
@@ -142,12 +156,15 @@ pub const Chunk = struct {
             .less_equal,
             .print,
             .pop,
-            => return disassembleByteInstruction(stdout, offset, instruction),
+            => return disassembleSimpleInstruction(stdout, offset, instruction),
             .constant,
             .define_global,
             .get_global,
             .set_global,
             => return self.disassembleConstantInstruction(stdout, offset, instruction),
+            .get_local,
+            .set_local
+            => return self.disassembleByteInstruction(stdout, offset, instruction),
         }
     }
 
@@ -361,6 +378,14 @@ pub const Vm = struct {
                         return error.runtime_error;
                     }
                 },
+                .get_local => {
+                    const index = self.readByte();
+                    self.stack.push(self.stack.data[index]);
+                },
+                .set_local => {
+                    const index = self.readByte();
+                    self.stack.data[index] = self.stack.peek(0);
+                }
             }
             first = false;
         }
