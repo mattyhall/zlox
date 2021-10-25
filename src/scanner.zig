@@ -118,7 +118,7 @@ pub const Scanner = struct {
             if (self.isAtEnd()) return;
 
             _ = switch (self.peek()) {
-                ' ', '\r', '\t' => self.advance(),
+                ' ', '\r', '\t', '\n' => self.advance(),
                 else => return,
             };
         }
@@ -359,6 +359,33 @@ test "random long strings" {
         .slash,
         .minus,
         .number,
+        .eof,
+    });
+}
+
+test "blocks" {
+    try testTokenise(
+        \\ {
+        \\   var a = "outer";
+        \\   {
+        \\     var a = a;
+        \\   }
+        \\ }
+    , &.{
+        .left_brace,
+        .var_,
+        .identifier,
+        .equal,
+        .string,
+        .semicolon,
+        .left_brace,
+        .var_,
+        .identifier,
+        .equal,
+        .identifier,
+        .semicolon,
+        .right_brace,
+        .right_brace,
         .eof,
     });
 }
