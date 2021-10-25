@@ -32,6 +32,7 @@ pub const OpCode = enum(u8) {
     get_local,
     set_local,
     jump_false,
+    jump,
 };
 
 const LineInfo = struct {
@@ -135,6 +136,7 @@ pub const Chunk = struct {
         const jmp_offset = @intCast(u16, self.code.data[offset + 1]) << 8 | @intCast(u16, self.code.data[offset + 2]);
         const s = switch (instruction) {
             .jump_false => "JMPF",
+            .jump => "JMP",
             else => unreachable,
         };
         try stdout.print(" {s:<5} {:>4} ", .{ s, jmp_offset });
@@ -175,9 +177,11 @@ pub const Chunk = struct {
             .set_global,
             => return self.disassembleConstantInstruction(stdout, offset, instruction),
             .get_local,
-            .set_local
+            .set_local,
             => return self.disassembleByteInstruction(stdout, offset, instruction),
-            .jump_false => return self.disassembleJump(stdout, offset, instruction),
+            .jump_false,
+            .jump,
+            => return self.disassembleJump(stdout, offset, instruction),
         }
     }
 
@@ -243,6 +247,10 @@ pub const Vm = struct {
         const v = self.ip[0];
         self.ip += 1;
         return v;
+    }
+
+    inline fn readShort(self: *Self) u16 {
+        return @intCast(u16, self.readByte()) << 8 | @intCast(u16, self.readByte());
     }
 
     fn runBinaryOp(self: *Self, op: OpCode) Error!void {
@@ -400,11 +408,12 @@ pub const Vm = struct {
                     self.stack.data[index] = self.stack.peek(0);
                 },
                 .jump_false => {
-                    const offset = @intCast(u16, self.readByte()) << 8 | @intCast(u16, self.readByte());
-                    if (self.stack.pop().falsey()) {
+                    const offset = self.readShort();
+                    if (self.stack.peek(0).falsey()) {
                         self.ip += offset;
                     }
-                }
+                },
+                .jump => self.ip += self.readShort(),
             }
             first = false;
         }

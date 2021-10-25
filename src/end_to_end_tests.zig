@@ -210,4 +210,23 @@ test "ifs" {
         \\ if (true) return 0.0;
         \\ return 1.0;
     ));
+
+    try std.testing.expectEqual(ds.Value{ .number = 0.0 }, run(&alloc,
+        \\ if (true) return 0.0;
+        \\ else return 1.0;
+    ));
+    try std.testing.expectEqual(ds.Value{ .number = 1.0 }, run(&alloc,
+        \\ if (false) return 0.0;
+        \\ else return 1.0;
+    ));
+
+    const body =
+        \\ if (a == 0.0) return 0.0;
+        \\ else if (a == 1.0) return 1.0;
+        \\ else return 2.0;
+    ;
+
+    try std.testing.expectEqual(ds.Value{ .number = 0.0 }, run(&alloc, "var a = 0.0;" ++ body));
+    try std.testing.expectEqual(ds.Value{ .number = 1.0 }, run(&alloc, "var a = 1.0;" ++ body));
+    try std.testing.expectEqual(ds.Value{ .number = 2.0 }, run(&alloc, "var a = 2.0;" ++ body));
 }

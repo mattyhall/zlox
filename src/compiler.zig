@@ -385,9 +385,23 @@ pub const Parser = struct {
         try self.expression();
         try self.consume(.right_paren, "Expected ')' after if condition");
 
-        var jmp = try self.emitJump(.jump_false);
+        // Jump to the else (or the end of then) if we don't match the condition
+        var else_jmp = try self.emitJump(.jump_false);
+
+        // Then block
+        try self.emit(&.{@enumToInt(OpCode.pop)});
         try self.statement();
-        jmp.set();
+        var then_jmp = try self.emitJump(.jump); // Jump over the else
+        // end then block
+
+        // Else block
+        else_jmp.set();
+        try self.emit(&.{@enumToInt(OpCode.pop)});
+        if (try self.match(.else_))
+            try self.statement();
+        // End else block
+
+        then_jmp.set();
     }
 
     fn statement(self: *Self) anyerror!void {
