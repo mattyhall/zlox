@@ -418,6 +418,7 @@ pub const Parser = struct {
     }
 
     fn declareVariable(self: *Self) !void {
+        if (self.locals.depth == 0) return;
         var i: isize = @intCast(isize, self.locals.count) - 1;
         while (i >= 0) : (i -= 1) {
             const local = &self.locals.locals[@intCast(usize, i)];
