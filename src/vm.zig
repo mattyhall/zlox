@@ -69,13 +69,16 @@ pub const Chunk = struct {
         return @intCast(u8, self.values.count - 1);
     }
 
-    pub fn writeChunk(self: *Self, byte: u8, line: usize) !void {
+    pub fn incLine(self: *Self, line: usize) !void {
         const line_infos = self.lines.count;
         if (line_infos == 0 or self.lines.data[self.lines.count - 1].line != line) {
             try self.lines.append(.{ .line = line, .count = 1 });
         } else {
             self.lines.data[line_infos - 1].count += 1;
         }
+    }
+
+    pub fn writeChunk(self: *Self, byte: u8) !void {
         try self.code.append(byte);
     }
 
@@ -115,9 +118,9 @@ pub const Chunk = struct {
             .set_global => "SETG",
             else => unreachable,
         };
-        try stdout.print(" {s:<5} {} ", .{ s, index });
+        try stdout.print(" {s:<5} c{} (", .{ s, index });
         try val.print(stdout);
-        try stdout.print("\n", .{});
+        try stdout.print(")\n", .{});
         return offset + 2;
     }
 
@@ -128,12 +131,12 @@ pub const Chunk = struct {
             .set_local => "SETL",
             else => unreachable,
         };
-        try stdout.print(" {s:<5} {:>4} ", .{ s, index });
+        try stdout.print(" {s:<5} s{} ", .{ s, index });
         try stdout.print("\n", .{});
         return offset + 2;
     }
 
-    fn disassembleJump(self: *const Self, stdout: anytype, offset: usize, instruction: OpCode) !usize {
+    fn disassembleJump(self: *const Self, stdout: anytype, offset: usize, instruction: OpCode, dir: enum { back, forward }) !usize {
         const jmp_offset = @intCast(u16, self.code.data[offset + 1]) << 8 | @intCast(u16, self.code.data[offset + 2]);
         const s = switch (instruction) {
             .jump_false => "JMPF",
@@ -141,7 +144,15 @@ pub const Chunk = struct {
             .loop => "LOOP",
             else => unreachable,
         };
-        try stdout.print(" {s:<5} {:>4} ", .{ s, jmp_offset });
+
+        var index = offset;
+        if (dir == .back) {
+            index -= jmp_offset - 1;
+        } else {
+            index += jmp_offset + 3;
+        }
+
+        try stdout.print(" {s:<5} @{x:0>4} ", .{ s, index });
         try stdout.print("\n", .{});
         return offset + 3;
     }
@@ -183,8 +194,8 @@ pub const Chunk = struct {
             => return self.disassembleByteInstruction(stdout, offset, instruction),
             .jump_false,
             .jump,
-            .loop,
-            => return self.disassembleJump(stdout, offset, instruction),
+            => return self.disassembleJump(stdout, offset, instruction, .forward),
+            .loop => return self.disassembleJump(stdout, offset, instruction, .back),
         }
     }
 

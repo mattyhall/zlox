@@ -179,8 +179,9 @@ pub const Parser = struct {
     }
 
     fn emit(self: *Self, bytes: []const u8) !void {
+        try self.chunk.incLine(self.previous.line);
         for (bytes) |b| {
-            try self.chunk.*.writeChunk(b, self.previous.line);
+            try self.chunk.writeChunk(b);
         }
     }
 

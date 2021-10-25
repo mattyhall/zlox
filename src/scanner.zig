@@ -92,6 +92,7 @@ pub const Scanner = struct {
     }
 
     fn advance(self: *Self) u8 {
+        if (self.start[self.current] == '\n') self.line += 1;
         self.current += 1;
         return self.start[self.current - 1];
     }
@@ -126,7 +127,6 @@ pub const Scanner = struct {
 
     fn string(self: *Self) Token {
         while (!self.isAtEnd() and self.peek() != '"') {
-            if (self.peek() == '\n') self.line += 1;
             _ = self.advance();
         }
 

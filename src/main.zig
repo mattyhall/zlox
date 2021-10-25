@@ -19,8 +19,21 @@ pub fn main() anyerror!void {
     var table = try ds.Table.init(&alloc.allocator);
     defer table.deinit();
 
-    const src = "1 + 3 * 2 / -7";
+    const src =
+        \\ var a = 0;
+        \\ if (a == 0) return "a == 0";
+        \\ else if (a == 1) return "a == 1";
+        \\ else return "a > 1";
+    ;
     std.log.debug("{s}", .{src});
+    var scanner = scan.Scanner.init(src);
+    while (true) {
+        const tok = scanner.scanToken();
+        if (tok.typ == .err) unreachable;
+        if (tok.typ == .eof) break;
+
+        std.log.debug("{} {}", .{tok.typ, tok.line});
+    }
     var parser = Parser.init(&obj_allocator, src);
     if (try parser.compile(&chunk))
         return;
