@@ -33,6 +33,7 @@ pub const OpCode = enum(u8) {
     set_local,
     jump_false,
     jump,
+    loop,
 };
 
 const LineInfo = struct {
@@ -137,6 +138,7 @@ pub const Chunk = struct {
         const s = switch (instruction) {
             .jump_false => "JMPF",
             .jump => "JMP",
+            .loop => "LOOP",
             else => unreachable,
         };
         try stdout.print(" {s:<5} {:>4} ", .{ s, jmp_offset });
@@ -181,6 +183,7 @@ pub const Chunk = struct {
             => return self.disassembleByteInstruction(stdout, offset, instruction),
             .jump_false,
             .jump,
+            .loop,
             => return self.disassembleJump(stdout, offset, instruction),
         }
     }
@@ -414,6 +417,7 @@ pub const Vm = struct {
                     }
                 },
                 .jump => self.ip += self.readShort(),
+                .loop => self.ip -= self.readShort(),
             }
             first = false;
         }

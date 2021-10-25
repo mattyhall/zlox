@@ -404,6 +404,24 @@ pub const Parser = struct {
         then_jmp.set();
     }
 
+    fn whileStatement(self: *Self) !void {
+        try self.consume(.left_paren, "Expected '(' after while");
+        const condition_loc = self.chunk.code.count - 1;
+        try self.expression();
+        try self.consume(.right_paren, "Expected ')' after while condition");
+
+        var condition_not_met_jmp = try self.emitJump(.jump_false);
+
+        // Loop body
+        try self.emit(&.{@enumToInt(OpCode.pop)});
+        try self.statement();
+        const diff = @intCast(u16, self.chunk.code.count - condition_loc);
+        try self.emit(&.{ @enumToInt(OpCode.loop), @intCast(u8, diff >> 8), @intCast(u8, diff & 0xff) });
+
+        condition_not_met_jmp.set();
+        try self.emit(&.{@enumToInt(OpCode.pop)});
+    }
+
     fn statement(self: *Self) anyerror!void {
         if (try self.match(.print)) {
             try self.printStatement();
@@ -415,6 +433,8 @@ pub const Parser = struct {
             try self.endScope();
         } else if (try self.match(.if_)) {
             try self.ifStatement();
+        } else if (try self.match(.while_)) {
+            try self.whileStatement();
         } else {
             try self.expressionStatement();
         }
