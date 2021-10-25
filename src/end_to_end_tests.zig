@@ -17,7 +17,8 @@ fn run(allocator: *ds.ObjectAllocator, src: []const u8) ds.Value {
     defer chunk.deinit();
 
     var parser = Parser.init(allocator, src);
-    _ = parser.compile(&chunk) catch unreachable;
+    if (parser.compile(&chunk) catch unreachable)
+        unreachable;
 
     var v = vm.Vm.init(allocator) catch unreachable;
     defer v.deinit();
@@ -123,7 +124,7 @@ test "basic statements" {
     // return nil so that it terminates
     _ = run(&alloc, "1;            return nil;");
     _ = run(&alloc, "1 + 7 * 2;    return nil;");
-    _ = run(&alloc, "print \"hi\"; return nil");
+    _ = run(&alloc, "print \"hi\"; return nil;");
 }
 
 test "global assignment" {
