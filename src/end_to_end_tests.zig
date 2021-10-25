@@ -188,4 +188,12 @@ test "local assignment" {
         \\   return a;
         \\ }
     );
+    try fails(&alloc,
+        \\ {
+        \\   var a = "outer";
+        \\   {
+        \\     var a = a;
+        \\   }
+        \\ }
+    );
 }

@@ -33,15 +33,15 @@ pub const Local = struct {
 };
 
 pub const Locals = struct {
-  locals: [LOCAL_COUNT]Local,
-  count: usize,
-  depth: isize,
+    locals: [LOCAL_COUNT]Local,
+    count: usize,
+    depth: isize,
 
-  const Self = @This();
+    const Self = @This();
 
-  fn init() Self {
-      return .{ .locals = undefined, .count = 0, .depth = 0 };
-  }
+    fn init() Self {
+        return .{ .locals = undefined, .count = 0, .depth = 0 };
+    }
 };
 
 pub const Parser = struct {
@@ -223,13 +223,16 @@ pub const Parser = struct {
         return try self.chunk.*.addConstant(.{ .object = obj });
     }
 
-    fn resolveLocal(self: *const Self, name: *const Token) ?u8 {
+    fn resolveLocal(self: *Self, name: *const Token) !?u8 {
         if (self.locals.count == 0) return null;
 
         var i = @intCast(isize, self.locals.count - 1);
         while (i >= 0) : (i -= 1) {
             const local = &self.locals.locals[@intCast(usize, i)];
             if (identifiersEql(name, &local.name)) {
+                if (local.depth == -1) {
+                    try self.err("Can't read local variable in its own initialiser");
+                }
                 return @intCast(u8, i);
             }
         }
@@ -240,7 +243,7 @@ pub const Parser = struct {
         var get: OpCode = undefined;
         var set: OpCode = undefined;
 
-        var arg = self.resolveLocal(name);
+        var arg = try self.resolveLocal(name);
         if (arg != null) {
             get = .get_local;
             set = .set_local;
@@ -376,7 +379,7 @@ pub const Parser = struct {
         }
         var local = &self.locals.locals[self.locals.count];
         self.locals.count += 1;
-        local.depth = self.locals.depth;
+        local.depth = -1;
         local.name = token;
     }
 
@@ -404,7 +407,10 @@ pub const Parser = struct {
     }
 
     fn defineVariable(self: *Self, constant: u8) !void {
-        if (self.locals.depth > 0) return;
+        if (self.locals.depth > 0) {
+            self.locals.locals[self.locals.count - 1].depth = self.locals.depth;
+            return;
+        }
 
         try self.emit(&.{ @enumToInt(OpCode.define_global), constant });
     }
