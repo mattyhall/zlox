@@ -147,12 +147,12 @@ pub const Chunk = struct {
 
         var index = offset;
         if (dir == .back) {
-            index -= jmp_offset - 1;
+            index -= jmp_offset;
         } else {
             index += jmp_offset + 3;
         }
 
-        try stdout.print(" {s:<5} @{x:0>4} ", .{ s, index });
+        try stdout.print(" {s:<5} {} (@{x:0>4}) ", .{ s, jmp_offset, index });
         try stdout.print("\n", .{});
         return offset + 3;
     }
@@ -427,8 +427,13 @@ pub const Vm = struct {
                         self.ip += offset;
                     }
                 },
-                .jump => self.ip += self.readShort(),
-                .loop => self.ip -= self.readShort(),
+                .jump => {
+                    const offset = self.readShort();
+                    self.ip += offset;
+                },
+                .loop => {
+                    self.ip -= self.readShort() + 1;
+                },
             }
             first = false;
         }

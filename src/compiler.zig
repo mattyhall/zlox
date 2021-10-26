@@ -407,7 +407,7 @@ pub const Parser = struct {
 
     fn whileStatement(self: *Self) !void {
         try self.consume(.left_paren, "Expected '(' after while");
-        const condition_loc = self.chunk.code.count - 1;
+        const condition_loc = self.chunk.code.count;
         try self.expression();
         try self.consume(.right_paren, "Expected ')' after while condition");
 
@@ -423,6 +423,51 @@ pub const Parser = struct {
         try self.emit(&.{@enumToInt(OpCode.pop)});
     }
 
+    fn forStatement(self: *Self) !void {
+        self.beginScope();
+
+        try self.consume(.left_paren, "Expected '(' after for");
+        // Declaration
+        if (!(try self.match(.semicolon))) {
+            try self.declaration();
+        }
+
+        // Condition
+        var condition_not_met_jmp: ?Jmp = null;
+        const condition_loc = self.chunk.code.count;
+        if (!(try self.match(.semicolon))) {
+            try self.expression();
+            condition_not_met_jmp = try self.emitJump(.jump_false);
+            try self.consume(.semicolon, "Expected ';' after for condition");
+        }
+        var skip_increment_jmp = try self.emitJump(.jump);
+
+        // Increment
+        const increment_loc = self.chunk.code.count;
+        if (!(try self.match(.right_paren))) {
+            try self.expression();
+            try self.consume(.right_paren, "Expected ')' after for condition");
+            try self.emit(&.{@enumToInt(OpCode.pop)});
+        }
+        var diff = @intCast(u16, self.chunk.code.count - condition_loc);
+        try self.emit(&.{ @enumToInt(OpCode.loop), @intCast(u8, diff >> 8), @intCast(u8, diff & 0xff) });
+
+        // Body
+        skip_increment_jmp.set();
+        if (condition_not_met_jmp != null)
+            try self.emit(&.{@enumToInt(OpCode.pop)});
+        try self.statement();
+        diff = @intCast(u16, self.chunk.code.count - increment_loc);
+        try self.emit(&.{ @enumToInt(OpCode.loop), @intCast(u8, diff >> 8), @intCast(u8, diff & 0xff) });
+
+        if (condition_not_met_jmp) |*j| {
+            j.set();
+            try self.emit(&.{@enumToInt(OpCode.pop)});
+        }
+
+        try self.endScope();
+    }
+
     fn statement(self: *Self) anyerror!void {
         if (try self.match(.print)) {
             try self.printStatement();
@@ -436,6 +481,8 @@ pub const Parser = struct {
             try self.ifStatement();
         } else if (try self.match(.while_)) {
             try self.whileStatement();
+        } else if (try self.match(.for_)) {
+            try self.forStatement();
         } else {
             try self.expressionStatement();
         }

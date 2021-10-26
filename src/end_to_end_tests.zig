@@ -232,7 +232,7 @@ test "ifs" {
     try std.testing.expectEqual(ds.Value{ .number = 2.0 }, run(&alloc, "var a = 2.0;" ++ body));
 }
 
-test "whiles" {
+test "while" {
     var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
@@ -255,5 +255,18 @@ test "whiles" {
         \\   a = a - b;
         \\ }
         \\ return a;
+    ));
+}
+
+test "for" {
+    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    defer alloc.deinit();
+
+    try std.testing.expectEqual(ds.Value{ .number = 55.0 }, run(&alloc,
+        \\ var count = 0;
+        \\ for (var i = 1; i <= 10; i = i + 1) {
+        \\   count = count + i;
+        \\ }
+        \\ return count;
     ));
 }
