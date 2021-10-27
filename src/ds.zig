@@ -1,4 +1,5 @@
 const std = @import("std");
+const vm = @import("vm.zig");
 const Allocator = std.mem.Allocator;
 
 const INITIAL_TABLE_CAPACITY = 4;
@@ -24,6 +25,7 @@ pub const Type = enum {
 
 pub const ObjectType = enum {
     string,
+    function,
 };
 
 pub const Object = struct {
@@ -36,6 +38,10 @@ pub const Object = struct {
         return @fieldParentPtr(String, "base", self);
     }
 
+    pub fn toFunction(self: *Self) *Function {
+        return @fieldParentPtr(Function, "base", self);
+    }
+
     pub fn toZigString(self: *Self) []u8 {
         return self.toString().chars;
     }
@@ -45,6 +51,13 @@ pub const String = struct {
     base: Object,
     chars: []u8,
     hash: u32,
+};
+
+pub const Function = struct {
+    base: Object,
+    arity: u8,
+    chunk: vm.Chunk,
+    name: ?*String,
 };
 
 pub const ObjectAllocator = struct {
@@ -98,6 +111,14 @@ pub const ObjectAllocator = struct {
         return self.takeString(s);
     }
 
+    pub fn newFunction(self: *Self) !*Function {
+        var f = try self.allocator.create(Function);
+        f.arity = 0;
+        f.name = null;
+        f.chunk = vm.Chunk.init(self.allocator);
+        return f;
+    }
+
     pub fn deinit(self: *Self) void {
         var obj = self.obj;
         while (obj) |o| {
@@ -107,6 +128,11 @@ pub const ObjectAllocator = struct {
                     const s = o.toString();
                     self.allocator.free(s.chars);
                     self.allocator.destroy(s);
+                },
+                .function => {
+                    const f = o.toFunction();
+                    f.chunk.deinit();
+                    self.allocator.destroy(f);
                 },
             }
             obj = next;
@@ -131,6 +157,7 @@ pub const Value = union(Type) {
             .boolean => |b| try writer.print("{any}", .{b}),
             .object => |o| switch (o.typ) {
                 .string => try writer.print("\"{s}\"", .{o.toZigString()}),
+                .function => try writer.print("<fn {s}>", .{o.toFunction().name.?.chars}),
             },
         }
     }
@@ -433,10 +460,10 @@ test "table" {
         const o = try object_allocator.takeString(s);
         const e = table.find(o.toString());
         if (i % 2 == 0) {
-          try std.testing.expectEqual(e, null);
+            try std.testing.expectEqual(e, null);
         } else {
-          try std.testing.expect(e != null);
-          try std.testing.expectEqual(e.?.value, .{ .number = @intToFloat(f32, i) });
+            try std.testing.expect(e != null);
+            try std.testing.expectEqual(e.?.value, .{ .number = @intToFloat(f32, i) });
         }
     }
 }

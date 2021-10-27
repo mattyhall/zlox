@@ -307,6 +307,7 @@ pub const Vm = struct {
                 .number => if (op == .equal) a.number == b.number else a.number != b.number,
                 .object => switch (a.object.typ) {
                     .string => if (op == .equal) a.object == b.object else a.object != b.object,
+                    .function => false, // TODO: fix
                 },
             } });
             return;
