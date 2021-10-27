@@ -10,9 +10,6 @@ pub fn main() anyerror!void {
     var data: [16 * 1024]u8 = undefined;
     var alloc = std.heap.FixedBufferAllocator.init(&data);
 
-    var chunk = vm.Chunk.init(&alloc.allocator);
-    defer chunk.deinit();
-
     var obj_allocator = try ds.ObjectAllocator.init(&alloc.allocator);
     defer obj_allocator.deinit();
 
@@ -20,10 +17,11 @@ pub fn main() anyerror!void {
     defer table.deinit();
 
     const src =
-        \\ var a = 0;
-        \\ if (a == 0) return "a == 0";
-        \\ else if (a == 1) return "a == 1";
-        \\ else return "a > 1";
+      \\ var a = 0;
+      \\ if (a == 10) a = 100;
+      \\ else if (a == 20) a = 200;
+      \\ else a = 0;
+      \\ print a;
     ;
     std.log.debug("{s}", .{src});
     var scanner = scan.Scanner.init(src);
@@ -34,15 +32,14 @@ pub fn main() anyerror!void {
 
         std.log.debug("{} {}", .{tok.typ, tok.line});
     }
-    var parser = Parser.init(&obj_allocator, src);
-    if (try parser.compile(&chunk))
-        return;
-    try chunk.disassemble("test");
+    var parser = try Parser.init(&obj_allocator, src, .script);
+    const func = (try parser.compile()) orelse unreachable;
+    try func.chunk.disassemble("script");
 
     var v = try vm.Vm.init(&obj_allocator);
     defer v.deinit();
 
-    _ = try v.interpret(&chunk);
+    _ = try v.interpret(func);
 }
 
 test {

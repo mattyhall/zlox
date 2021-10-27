@@ -41,6 +41,15 @@ const LineInfo = struct {
     count: usize,
 };
 
+const CallFrame = struct {
+    function: *ds.Function,
+
+    // Current ip of this function. If this function (a) calls another (b) then when b returns we'll reset the vm ip to a's.
+    ip: [*]const u8,
+
+    slots: [*]ds.Value, // Pointer into the stack to the first slot the function can use
+};
+
 pub const Chunk = struct {
     code: ds.DynamicArray(u8),
     values: ds.DynamicArray(Value),
@@ -235,9 +244,11 @@ pub const InterpretError = error{
 pub const Vm = struct {
     allocator: *ds.ObjectAllocator,
     chunk: ?*const Chunk,
-    ip: [*]const u8,
     stack: ds.Stack,
     globals: ds.Table,
+
+    frames: [ds.FRAMES_MAX]CallFrame,
+    frame_count: usize,
 
     const Self = @This();
     // TODO: be cleverer
@@ -247,9 +258,10 @@ pub const Vm = struct {
         return Self{
             .allocator = allocator,
             .chunk = null,
-            .ip = @intToPtr([*]const u8, 0x8),
             .stack = undefined,
             .globals = try ds.Table.init(allocator.allocator),
+            .frames = undefined,
+            .frame_count = 0,
         };
     }
 
@@ -258,8 +270,9 @@ pub const Vm = struct {
     }
 
     inline fn readByte(self: *Self) u8 {
-        const v = self.ip[0];
-        self.ip += 1;
+        var frame = &self.frames[self.frame_count - 1];
+        const v = frame.ip[0];
+        frame.ip += 1;
         return v;
     }
 
@@ -301,15 +314,17 @@ pub const Vm = struct {
                 self.stack.push(.{ .boolean = if (op == .equal) false else true });
                 return;
             }
-            self.stack.push(.{ .boolean = switch (@as(ds.Type, a)) {
-                .nil => true,
-                .boolean => if (op == .equal) a.boolean == b.boolean else a.boolean != b.boolean,
-                .number => if (op == .equal) a.number == b.number else a.number != b.number,
-                .object => switch (a.object.typ) {
-                    .string => if (op == .equal) a.object == b.object else a.object != b.object,
-                    .function => false, // TODO: fix
+            self.stack.push(.{
+                .boolean = switch (@as(ds.Type, a)) {
+                    .nil => true,
+                    .boolean => if (op == .equal) a.boolean == b.boolean else a.boolean != b.boolean,
+                    .number => if (op == .equal) a.number == b.number else a.number != b.number,
+                    .object => switch (a.object.typ) {
+                        .string => if (op == .equal) a.object == b.object else a.object != b.object,
+                        .function => false, // TODO: fix
+                    },
                 },
-            } });
+            });
             return;
         }
         if (self.stack.peek(1) != .number or self.stack.peek(0) != .number) {
@@ -338,9 +353,8 @@ pub const Vm = struct {
     }
 
     fn run(self: *Self) Error!Value {
-        self.stack.reset();
-
-        const chunk = self.chunk.?;
+        var frame = &self.frames[self.frame_count - 1];
+        const chunk = frame.function.chunk;
 
         const stdout = std.io.getStdOut().writer();
         var line_offset: usize = 0;
@@ -355,7 +369,7 @@ pub const Vm = struct {
                     current_line_length = chunk.lines.data[line_offset].count;
                     line = .{ .new = chunk.lines.data[line_offset].line };
                 }
-                const offset = @ptrToInt(self.ip) - @ptrToInt(chunk.code.data);
+                const offset = @ptrToInt(frame.ip) - @ptrToInt(chunk.code.data);
                 try self.stack.debugPrint(stdout);
                 _ = try chunk.disassembleInstruction(stdout, offset, line);
             }
@@ -416,33 +430,42 @@ pub const Vm = struct {
                 },
                 .get_local => {
                     const index = self.readByte();
-                    self.stack.push(self.stack.data[index]);
+                    self.stack.push(frame.slots[index]);
                 },
                 .set_local => {
                     const index = self.readByte();
-                    self.stack.data[index] = self.stack.peek(0);
+                    frame.slots[index] = self.stack.peek(0);
                 },
                 .jump_false => {
                     const offset = self.readShort();
                     if (self.stack.peek(0).falsey()) {
-                        self.ip += offset;
+                        frame.ip += offset;
                     }
                 },
                 .jump => {
                     const offset = self.readShort();
-                    self.ip += offset;
+                    frame.ip += offset;
                 },
                 .loop => {
-                    self.ip -= self.readShort() + 1;
+                    frame.ip -= self.readShort() + 1;
                 },
             }
             first = false;
         }
     }
 
-    pub fn interpret(self: *Self, chunk: *const Chunk) Error!Value {
-        self.chunk = chunk;
-        self.ip = chunk.code.data;
+    pub fn interpret(self: *Self, function: *ds.Function) Error!Value {
+        self.stack.reset();
+
+        self.stack.push(.{ .object = &function.base });
+
+        var frame = &self.frames[self.frame_count];
+        self.frame_count += 1;
+
+        frame.function = function;
+        frame.ip = function.chunk.code.data;
+        frame.slots = &self.stack.data;
+
         return try self.run();
     }
 

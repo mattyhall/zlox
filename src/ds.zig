@@ -4,7 +4,11 @@ const Allocator = std.mem.Allocator;
 
 const INITIAL_TABLE_CAPACITY = 4;
 const MAX_LOAD = 0.75;
-const MAX_STACK = 256;
+
+pub const FRAMES_MAX = 64;
+
+const MAX_STACK = FRAMES_MAX * 256;
+
 pub const FLOAT_PRECISION = 6;
 
 fn hashBytes(bytes: []const u8) u32 {
@@ -75,6 +79,15 @@ pub const ObjectAllocator = struct {
         };
     }
 
+    fn addObject(self: *Self, obj: *Object) void {
+        if (self.obj) |old| {
+            obj.next = old;
+            self.obj = obj;
+        } else {
+            self.obj = obj;
+        }
+    }
+
     pub fn takeString(self: *Self, chars: []u8) !*Object {
         const entry = self.string_interner.findString(chars);
         if (entry) |e| {
@@ -89,12 +102,7 @@ pub const ObjectAllocator = struct {
         // TODO: this function hashes twice, once in the string interner and
         // once below. We should only do it once if possible
         obj.hash = hashBytes(chars);
-        if (self.obj) |old| {
-            obj.base.next = old;
-            self.obj = &obj.base;
-        } else {
-            self.obj = &obj.base;
-        }
+        self.addObject(&obj.base);
         _ = try self.string_interner.insert(obj, .nil);
         return &obj.base;
     }
@@ -113,9 +121,12 @@ pub const ObjectAllocator = struct {
 
     pub fn newFunction(self: *Self) !*Function {
         var f = try self.allocator.create(Function);
+        f.base.next = null;
+        f.base.typ = .function;
         f.arity = 0;
         f.name = null;
         f.chunk = vm.Chunk.init(self.allocator);
+        self.addObject(&f.base);
         return f;
     }
 
@@ -157,7 +168,10 @@ pub const Value = union(Type) {
             .boolean => |b| try writer.print("{any}", .{b}),
             .object => |o| switch (o.typ) {
                 .string => try writer.print("\"{s}\"", .{o.toZigString()}),
-                .function => try writer.print("<fn {s}>", .{o.toFunction().name.?.chars}),
+                .function => {
+                    var name =  if (o.toFunction().name) |n| n.chars else "script";
+                    try writer.print("<fn {s}>", .{name});
+                }
             },
         }
     }

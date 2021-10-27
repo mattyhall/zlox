@@ -13,17 +13,13 @@ fn failsExpr(allocator: *ds.ObjectAllocator, comptime src: []const u8) !void {
 }
 
 fn run(allocator: *ds.ObjectAllocator, src: []const u8) ds.Value {
-    var chunk = vm.Chunk.init(std.testing.allocator);
-    defer chunk.deinit();
-
-    var parser = Parser.init(allocator, src);
-    if (parser.compile(&chunk) catch unreachable)
-        unreachable;
+    var parser = Parser.init(allocator, src, .script) catch unreachable;
+    var func = (parser.compile() catch unreachable) orelse unreachable;
 
     var v = vm.Vm.init(allocator) catch unreachable;
     defer v.deinit();
 
-    const value = v.interpret(&chunk) catch unreachable;
+    const value = v.interpret(func) catch unreachable;
     return value;
 }
 
@@ -31,13 +27,14 @@ fn fails(allocator: *ds.ObjectAllocator, src: []const u8) !void {
     var chunk = vm.Chunk.init(std.testing.allocator);
     defer chunk.deinit();
 
-    var parser = Parser.init(allocator, src);
-    if (parser.compile(&chunk) catch unreachable) return;
+    var parser = Parser.init(allocator, src, .script) catch unreachable;
+    var func = parser.compile() catch unreachable;
+    if (func == null) return;
 
     var v = try vm.Vm.init(allocator);
     defer v.deinit();
 
-    try std.testing.expectError(vm.Vm.Error.runtime_error, v.interpret(&chunk));
+    try std.testing.expectError(vm.Vm.Error.runtime_error, v.interpret(func.?));
 }
 
 test "literals" {
@@ -51,27 +48,22 @@ test "literals" {
 
     try std.testing.expectEqualStrings("HELLO", runExpr(&alloc, "\"HELLO\"").toZigString());
 }
-
 test "sums" {
     var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
-
     // Numbers
     try std.testing.expectEqual(ds.Value{ .number = 10.0 }, runExpr(&alloc, "3 + 7"));
     try std.testing.expectEqual(ds.Value{ .number = -4.0 }, runExpr(&alloc, "3 - 7"));
     try std.testing.expectEqual(ds.Value{ .number = 9.0 }, runExpr(&alloc, "3 * (1+2)"));
     try std.testing.expectEqual(ds.Value{ .number = 8.0 }, runExpr(&alloc, "-2 + 7 + 3"));
-    try std.testing.expectEqual(ds.Value{ .number = 0.0 }, runExpr(&alloc, "8 + 12 * -2 / 3"));
-
+    try std.testing.expectEqual(ds.Value{ .number = 0.0 }, runExpr(&alloc, "8 + 12 * -2 / 3")); //
     try failsExpr(&alloc, "false + false");
     try failsExpr(&alloc, "true * true");
     try failsExpr(&alloc, "nil - nil");
     try failsExpr(&alloc, "8 + 2 * false");
-
     // Strings
     try std.testing.expectEqualStrings("HELLOWORLD", runExpr(&alloc, "\"HELLO\" + \"WORLD\"").toZigString());
-    try std.testing.expectEqualStrings("HELLO WORLD", runExpr(&alloc, "\"HELLO\" + \" \" + \"WORLD\"").toZigString());
-
+    try std.testing.expectEqualStrings("HELLO WORLD", runExpr(&alloc, "\"HELLO\" + \" \" + \"WORLD\"").toZigString()); //
     try failsExpr(&alloc, "\"HELLO\" + 2");
 }
 
@@ -97,7 +89,6 @@ test "boolean logic" {
     try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "!true == !true"));
     try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "nil == nil"));
     try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "\"hi\" == \"hi\""));
-
     try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "1 != 5"));
     try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "1.1 != 1.2"));
     try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "true != false"));
@@ -121,10 +112,9 @@ test "basic statements" {
     var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
-    // return nil so that it terminates
-    _ = run(&alloc, "1;            return nil;");
-    _ = run(&alloc, "1 + 7 * 2;    return nil;");
-    _ = run(&alloc, "print \"hi\"; return nil;");
+    _ = run(&alloc, "1;");
+    _ = run(&alloc, "1 + 7 * 2;");
+    _ = run(&alloc, "print \"hi\";");
 }
 
 test "global assignment" {
@@ -136,7 +126,6 @@ test "global assignment" {
     try std.testing.expectEqual(ds.Value{ .number = 22.0 }, run(&alloc, "var a = 10 * 2 + 7 - 5; return a;"));
     try std.testing.expectEqual(ds.Value{ .boolean = true }, run(&alloc, "var a = true; return a;"));
     try std.testing.expectEqual(ds.Value{ .number = 0.0 }, run(&alloc, "var a = 10; a = 0; return a;"));
-
     try std.testing.expectEqualStrings("hi", run(&alloc, "var a = \"hi\"; return a;").toZigString());
     try std.testing.expectEqualStrings("hello, world", run(&alloc, "var a = \"hello\"; a = a + \", world\"; return a;").toZigString());
 
@@ -198,7 +187,6 @@ test "local assignment" {
         \\ }
     );
 }
-
 test "ifs" {
     var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();

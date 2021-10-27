@@ -58,15 +58,22 @@ const Jmp = struct {
     }
 };
 
+pub const FunctionType = enum { function, script };
+
 pub const Parser = struct {
     allocator: *ds.ObjectAllocator,
+
     current: Token,
     previous: Token,
     scanner: scan.Scanner,
+
     had_error: bool,
     panic_mode: bool,
-    chunk: *Chunk,
+
     locals: Locals,
+
+    function: *ds.Function,
+    function_type: FunctionType,
 
     const Self = @This();
 
@@ -121,17 +128,29 @@ pub const Parser = struct {
     };
     // zig fmt: on
 
-    pub fn init(allocator: *ds.ObjectAllocator, src: []const u8) Self {
-        return .{
+    pub fn init(allocator: *ds.ObjectAllocator, src: []const u8, function_type: FunctionType) !Self {
+        var self = .{
             .allocator = allocator,
             .scanner = scan.Scanner.init(src),
             .previous = undefined,
             .current = undefined,
             .had_error = false,
             .panic_mode = false,
-            .chunk = undefined,
             .locals = Locals.init(),
+            .function = try allocator.newFunction(),
+            .function_type = function_type,
         };
+
+        var local = &self.locals.locals[0];
+        local.depth = 0;
+        local.name.loc = "";
+        self.locals.count += 1;
+
+        return self;
+    }
+
+    fn currentChunk(self: *Self) *Chunk {
+        return &self.function.chunk;
     }
 
     fn errorAt(self: *Self, tok: *const Token, msg: []const u8) !void {
@@ -179,9 +198,9 @@ pub const Parser = struct {
     }
 
     fn emit(self: *Self, bytes: []const u8) !void {
-        try self.chunk.incLine(self.previous.line);
+        try self.currentChunk().incLine(self.previous.line);
         for (bytes) |b| {
-            try self.chunk.writeChunk(b);
+            try self.currentChunk().writeChunk(b);
         }
     }
 
@@ -224,18 +243,18 @@ pub const Parser = struct {
         _ = can_assign;
         const loc = self.previous.loc orelse unreachable;
         const obj = try self.allocator.allocString(loc[1 .. loc.len - 1]);
-        try self.emit(&.{ @enumToInt(OpCode.constant), try self.chunk.*.addConstant(.{ .object = obj }) });
+        try self.emit(&.{ @enumToInt(OpCode.constant), try self.currentChunk().*.addConstant(.{ .object = obj }) });
     }
 
     fn number(self: *Self, can_assign: bool) !void {
         _ = can_assign;
         const num = try std.fmt.parseFloat(f32, self.previous.loc orelse unreachable);
-        try self.emit(&.{ @enumToInt(OpCode.constant), try self.chunk.*.addConstant(.{ .number = num }) });
+        try self.emit(&.{ @enumToInt(OpCode.constant), try self.currentChunk().*.addConstant(.{ .number = num }) });
     }
 
     fn identifierConstant(self: *Self, token: *const Token) !u8 {
         const obj = try self.allocator.allocString(token.loc.?);
-        return try self.chunk.*.addConstant(.{ .object = obj });
+        return try self.currentChunk().*.addConstant(.{ .object = obj });
     }
 
     fn resolveLocal(self: *Self, name: *const Token) !?u8 {
@@ -376,8 +395,8 @@ pub const Parser = struct {
     fn emitJump(self: *Self, op: OpCode) !Jmp {
         try self.emit(&.{ @enumToInt(op), 0x00, 0x00 });
         return Jmp{
-            .chunk = self.chunk,
-            .start = self.chunk.code.count - 2,
+            .chunk = self.currentChunk(),
+            .start = self.currentChunk().code.count - 2,
         };
     }
 
@@ -407,7 +426,7 @@ pub const Parser = struct {
 
     fn whileStatement(self: *Self) !void {
         try self.consume(.left_paren, "Expected '(' after while");
-        const condition_loc = self.chunk.code.count;
+        const condition_loc = self.currentChunk().code.count;
         try self.expression();
         try self.consume(.right_paren, "Expected ')' after while condition");
 
@@ -416,7 +435,7 @@ pub const Parser = struct {
         // Loop body
         try self.emit(&.{@enumToInt(OpCode.pop)});
         try self.statement();
-        const diff = @intCast(u16, self.chunk.code.count - condition_loc);
+        const diff = @intCast(u16, self.currentChunk().code.count - condition_loc);
         try self.emit(&.{ @enumToInt(OpCode.loop), @intCast(u8, diff >> 8), @intCast(u8, diff & 0xff) });
 
         condition_not_met_jmp.set();
@@ -434,7 +453,7 @@ pub const Parser = struct {
 
         // Condition
         var condition_not_met_jmp: ?Jmp = null;
-        const condition_loc = self.chunk.code.count;
+        const condition_loc = self.currentChunk().code.count;
         if (!(try self.match(.semicolon))) {
             try self.expression();
             condition_not_met_jmp = try self.emitJump(.jump_false);
@@ -443,13 +462,13 @@ pub const Parser = struct {
         var skip_increment_jmp = try self.emitJump(.jump);
 
         // Increment
-        const increment_loc = self.chunk.code.count;
+        const increment_loc = self.currentChunk().code.count;
         if (!(try self.match(.right_paren))) {
             try self.expression();
             try self.consume(.right_paren, "Expected ')' after for condition");
             try self.emit(&.{@enumToInt(OpCode.pop)});
         }
-        var diff = @intCast(u16, self.chunk.code.count - condition_loc);
+        var diff = @intCast(u16, self.currentChunk().code.count - condition_loc);
         try self.emit(&.{ @enumToInt(OpCode.loop), @intCast(u8, diff >> 8), @intCast(u8, diff & 0xff) });
 
         // Body
@@ -457,7 +476,7 @@ pub const Parser = struct {
         if (condition_not_met_jmp != null)
             try self.emit(&.{@enumToInt(OpCode.pop)});
         try self.statement();
-        diff = @intCast(u16, self.chunk.code.count - increment_loc);
+        diff = @intCast(u16, self.currentChunk().code.count - increment_loc);
         try self.emit(&.{ @enumToInt(OpCode.loop), @intCast(u8, diff >> 8), @intCast(u8, diff & 0xff) });
 
         if (condition_not_met_jmp) |*j| {
@@ -567,12 +586,16 @@ pub const Parser = struct {
         if (self.panic_mode) try self.synchronise();
     }
 
-    pub fn compile(self: *Self, chunk: *Chunk) !bool {
-        self.chunk = chunk;
+    pub fn compile(self: *Self) !?*ds.Function {
         try self.advance();
         while (!(try self.match(.eof))) {
             try self.declaration();
         }
-        return self.had_error;
+        if (self.had_error)
+            return null;
+
+        try self.emit(&.{@enumToInt(OpCode.nil), @enumToInt(OpCode.ret)});
+
+        return self.function;
     }
 };
