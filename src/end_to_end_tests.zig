@@ -258,3 +258,32 @@ test "for" {
         \\ return count;
     ));
 }
+
+test "fun" {
+    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    defer alloc.deinit();
+
+    _ = run(&alloc,
+        \\ fun foo() {
+        \\   print "hello";
+        \\ }
+        \\ foo();
+        \\ print "world";
+    );
+
+    try std.testing.expectEqualStrings("hello world", run(&alloc,
+        \\ fun foo() {
+        \\   return "hello";
+        \\ }
+        \\ return foo() + " world";
+    ).toZigString());
+
+    try std.testing.expectEqual(ds.Value{ .number = 10.0 }, run(&alloc,
+        \\ var x = 10;
+        \\ fun foo() {
+        \\   var y = 2;
+        \\   return x * 2;
+        \\ }
+        \\ return foo() / 2;
+    ));
+}

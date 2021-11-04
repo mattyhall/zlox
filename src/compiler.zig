@@ -85,7 +85,7 @@ pub const Parser = struct {
 
     // zig fmt: off
     const rules = [_]ParseRule{
-        .{ .prefix = grouping, .infix = null,   .precedence = .none },     //left_paren,
+        .{ .prefix = grouping, .infix = call,   .precedence = .call },     //left_paren,
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //right_paren,
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //semicolon,
         .{ .prefix = null,     .infix = binary, .precedence = .term },     //plus,
@@ -374,6 +374,11 @@ pub const Parser = struct {
         _ = can_assign;
         try self.expression();
         try self.consume(.right_paren, "Expect ')' after expression");
+    }
+
+    fn call(self: *Self) !void {
+        try self.consume(.right_paren, "Expect ')' after arguments");
+        try self.emit(&.{ @enumToInt(OpCode.call), 0 }); // Will later pass the count of arguments
     }
 
     fn printStatement(self: *Self) !void {

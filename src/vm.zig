@@ -34,6 +34,7 @@ pub const OpCode = enum(u8) {
     jump_false,
     jump,
     loop,
+    call,
 };
 
 const LineInfo = struct {
@@ -136,11 +137,12 @@ pub const Chunk = struct {
     fn disassembleByteInstruction(self: *const Self, stdout: anytype, offset: usize, instruction: OpCode) !usize {
         const index = self.code.data[offset + 1];
         const s = switch (instruction) {
-            .get_local => "GETL",
-            .set_local => "SETL",
+            .get_local => "GETL ",
+            .set_local => "SETL ",
+            .call => "CALL ",
             else => unreachable,
         };
-        try stdout.print(" {s:<5} s{} ", .{ s, index });
+        try stdout.print(" {s:<7}{} ", .{ s, index });
         try stdout.print("\n", .{});
         return offset + 2;
     }
@@ -200,6 +202,7 @@ pub const Chunk = struct {
             => return self.disassembleConstantInstruction(stdout, offset, instruction),
             .get_local,
             .set_local,
+            .call,
             => return self.disassembleByteInstruction(stdout, offset, instruction),
             .jump_false,
             .jump,
@@ -343,6 +346,28 @@ pub const Vm = struct {
         self.stack.push(.{ .boolean = res });
     }
 
+    fn call(self: *Self, function: *ds.Function, arg_count: usize) !void {
+        var frame = &self.frames[self.frame_count];
+        self.frame_count += 1;
+        frame.function = function;
+        frame.ip = function.chunk.code.data;
+        frame.slots = self.stack.top - arg_count - 1;
+    }
+
+    fn callValue(self: *Self, callee: ds.Value, arg_count: u8) !void {
+        if (callee == .object) {
+            switch (callee.object.typ) {
+                .function => {
+                    try self.call(callee.object.toFunction(), arg_count);
+                    return;
+                },
+                else => {},
+            }
+        }
+        try self.runtimeError("Can only call functions and classes", .{});
+        return error.runtime_error;
+    }
+
     fn runtimeError(self: *Self, comptime fmt: []const u8, args: anytype) !void {
         const stderr = std.io.getStdErr().writer();
         try stderr.print(fmt, args);
@@ -354,7 +379,7 @@ pub const Vm = struct {
 
     fn run(self: *Self) Error!Value {
         var frame = &self.frames[self.frame_count - 1];
-        const chunk = frame.function.chunk;
+        var chunk = frame.function.chunk;
 
         const stdout = std.io.getStdOut().writer();
         var line_offset: usize = 0;
@@ -380,7 +405,16 @@ pub const Vm = struct {
                     const index = self.readByte();
                     self.stack.push(chunk.values.data[index]);
                 },
-                .ret => return self.stack.pop(),
+                .ret => {
+                    const res = self.stack.pop();
+                    self.frame_count -= 1;
+                    if (self.frame_count == 0)
+                        return res;
+                    self.stack.top = frame.slots;
+                    self.stack.push(res);
+                    frame = &self.frames[self.frame_count - 1];
+                    chunk = frame.function.chunk;
+                },
                 .negate => {
                     if (self.stack.peek(0) != .number) {
                         try self.runtimeError("Operand must be a number", .{});
@@ -448,6 +482,12 @@ pub const Vm = struct {
                 },
                 .loop => {
                     frame.ip -= self.readShort() + 1;
+                },
+                .call => {
+                    const arg_count = self.readByte();
+                    try self.callValue(self.stack.peek(arg_count), arg_count);
+                    frame = &self.frames[self.frame_count - 1];
+                    chunk = frame.function.chunk;
                 },
             }
             first = false;
