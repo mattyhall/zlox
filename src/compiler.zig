@@ -376,9 +376,26 @@ pub const Parser = struct {
         try self.consume(.right_paren, "Expect ')' after expression");
     }
 
-    fn call(self: *Self) !void {
+    fn argumentList(self: *Self) !u8 {
+        var arg_count: u8 = 0;
+        if (!self.check(.right_paren)) {
+            while (true) {
+                try self.expression();
+                if (arg_count == 255) {
+                    try self.err("Can't have more than 255 arguments");
+                }
+                arg_count += 1;
+                if (!(try self.match(.comma)))
+                    break;
+            }
+        }
         try self.consume(.right_paren, "Expect ')' after arguments");
-        try self.emit(&.{ @enumToInt(OpCode.call), 0 }); // Will later pass the count of arguments
+        return arg_count;
+    }
+
+    fn call(self: *Self) !void {
+        const arg_count = try self.argumentList();
+        try self.emit(&.{ @enumToInt(OpCode.call), arg_count });
     }
 
     fn printStatement(self: *Self) !void {
@@ -605,6 +622,18 @@ pub const Parser = struct {
         compiler.beginScope();
 
         try compiler.consume(.left_paren, "Expected '(' after function name");
+        if (!compiler.check(.right_paren)) {
+            while (true) {
+                compiler.function.arity += 1;
+                if (compiler.function.arity > 255)
+                    try compiler.errorAtCurrent("Can't have more thatn 255 parameters");
+
+                const constant = try compiler.parseVariable("Expect parameter name");
+                try compiler.defineVariable(constant);
+                if (!(try compiler.match(.comma)))
+                    break;
+            }
+        }
         try compiler.consume(.right_paren, "Expected ')' after parameters");
         try compiler.consume(.left_brace, "Expected '{' before function body");
         try compiler.block();

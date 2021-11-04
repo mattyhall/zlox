@@ -347,6 +347,10 @@ pub const Vm = struct {
     }
 
     fn call(self: *Self, function: *ds.Function, arg_count: usize) !void {
+        if (arg_count != function.arity) {
+            try self.runtimeError("Expected {} arguments but got {}", .{ function.arity, arg_count });
+            return error.runtime_error;
+        }
         var frame = &self.frames[self.frame_count];
         self.frame_count += 1;
         frame.function = function;

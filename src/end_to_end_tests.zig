@@ -270,14 +270,12 @@ test "fun" {
         \\ foo();
         \\ print "world";
     );
-
     try std.testing.expectEqualStrings("hello world", run(&alloc,
         \\ fun foo() {
         \\   return "hello";
         \\ }
         \\ return foo() + " world";
     ).toZigString());
-
     try std.testing.expectEqual(ds.Value{ .number = 10.0 }, run(&alloc,
         \\ var x = 10;
         \\ fun foo() {
@@ -286,4 +284,22 @@ test "fun" {
         \\ }
         \\ return foo() / 2;
     ));
+    try std.testing.expectEqual(ds.Value{ .number = 20.0 }, run(&alloc,
+        \\ fun multiply(a, sf) {
+        \\   return a * sf;
+        \\ }
+        \\ return multiply(10, 2);
+    ));
+
+
+    try fails(&alloc,
+        \\ fun foo(a) {
+        \\ }
+        \\ foo();
+    );
+    try fails(&alloc,
+        \\ fun foo(a) {
+        \\ }
+        \\ foo(10, 20);
+    );
 }
