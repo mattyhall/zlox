@@ -30,6 +30,7 @@ pub const Type = enum {
 pub const ObjectType = enum {
     string,
     function,
+    native,
 };
 
 pub const Object = struct {
@@ -44,6 +45,10 @@ pub const Object = struct {
 
     pub fn toFunction(self: *Self) *Function {
         return @fieldParentPtr(Function, "base", self);
+    }
+
+    pub fn toNative(self: *Self) *Native {
+        return @fieldParentPtr(Native, "base", self);
     }
 
     pub fn toZigString(self: *Self) []u8 {
@@ -62,6 +67,13 @@ pub const Function = struct {
     arity: u8,
     chunk: vm.Chunk,
     name: ?*String,
+};
+
+pub const NativeFn = fn (arg_count: u8, args: [*]Value) Value;
+
+pub const Native = struct {
+    base: Object,
+    function: NativeFn,
 };
 
 pub const ObjectAllocator = struct {
@@ -130,6 +142,15 @@ pub const ObjectAllocator = struct {
         return f;
     }
 
+    pub fn newNative(self: *Self, func: NativeFn) !*Native {
+        var n = try self.allocator.create(Native);
+        n.base.next = null;
+        n.base.typ = .native;
+        n.function = func;
+        self.addObject(&n.base);
+        return n;
+    }
+
     pub fn deinit(self: *Self) void {
         var obj = self.obj;
         while (obj) |o| {
@@ -144,6 +165,9 @@ pub const ObjectAllocator = struct {
                     const f = o.toFunction();
                     f.chunk.deinit();
                     self.allocator.destroy(f);
+                },
+                .native => {
+                    self.allocator.destroy(o.toNative());
                 },
             }
             obj = next;
@@ -169,9 +193,10 @@ pub const Value = union(Type) {
             .object => |o| switch (o.typ) {
                 .string => try writer.print("\"{s}\"", .{o.toZigString()}),
                 .function => {
-                    var name =  if (o.toFunction().name) |n| n.chars else "script";
+                    var name = if (o.toFunction().name) |n| n.chars else "script";
                     try writer.print("<fn {s}>", .{name});
-                }
+                },
+                .native => try writer.print("<native fn>", .{}),
             },
         }
     }

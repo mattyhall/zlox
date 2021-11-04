@@ -244,6 +244,15 @@ pub const InterpretError = error{
     runtime_error,
 };
 
+var timer: std.time.Timer = undefined;
+
+fn clockNative(arg_count: u8, args: [*]ds.Value) ds.Value {
+    _ = arg_count;
+    _ = args;
+    const elapsed = timer.read();
+    return .{ .number = @intToFloat(f32, elapsed) / @intToFloat(f32, std.time.ns_per_s) };
+}
+
 pub const Vm = struct {
     allocator: *ds.ObjectAllocator,
     chunk: ?*const Chunk,
@@ -258,7 +267,7 @@ pub const Vm = struct {
     pub const Error = anyerror; //if (DEBUG_TRACE_EXECUTION) anyerror else InterpretError;
 
     pub fn init(allocator: *ds.ObjectAllocator) !Self {
-        return Self{
+        var self = Self{
             .allocator = allocator,
             .chunk = null,
             .stack = undefined,
@@ -266,6 +275,7 @@ pub const Vm = struct {
             .frames = undefined,
             .frame_count = 0,
         };
+        return self;
     }
 
     fn reset(self: *Self) void {
@@ -325,6 +335,7 @@ pub const Vm = struct {
                     .object => switch (a.object.typ) {
                         .string => if (op == .equal) a.object == b.object else a.object != b.object,
                         .function => false, // TODO: fix
+                        .native => false,
                     },
                 },
             });
@@ -365,11 +376,28 @@ pub const Vm = struct {
                     try self.call(callee.object.toFunction(), arg_count);
                     return;
                 },
+                .native => {
+                    const f = callee.object.toNative();
+                    const res = f.function(arg_count, self.stack.top - arg_count);
+                    self.stack.top -= arg_count + 1;
+                    self.stack.push(res);
+                    return;
+                },
                 else => {},
             }
         }
         try self.runtimeError("Can only call functions and classes", .{});
         return error.runtime_error;
+    }
+
+    fn defineNative(self: *Self, name: []const u8, f: ds.NativeFn) !void {
+        self.stack.push(.{ .object = try self.allocator.allocString(name) });
+        self.stack.push(.{ .object = &(try self.allocator.newNative(f)).base });
+
+        _ = try self.globals.insert(self.stack.data[0].toString(), self.stack.data[1]);
+
+        _ = self.stack.pop();
+        _ = self.stack.pop();
     }
 
     fn runtimeError(self: *Self, comptime fmt: []const u8, args: anytype) !void {
@@ -500,6 +528,9 @@ pub const Vm = struct {
 
     pub fn interpret(self: *Self, function: *ds.Function) Error!Value {
         self.stack.reset();
+
+        try self.defineNative("clock", clockNative);
+        timer = try std.time.Timer.start();
 
         self.stack.push(.{ .object = &function.base });
 
