@@ -149,6 +149,29 @@ pub const Parser = struct {
         return self;
     }
 
+    pub fn inherit(other: *const Self, function_type: FunctionType) !Self {
+        var self: Self = .{
+            .allocator = other.allocator,
+            .scanner = other.scanner,
+            .previous = other.previous,
+            .current = other.current,
+            .had_error = false,
+            .panic_mode = false,
+            .locals = Locals.init(),
+            .function = try other.allocator.newFunction(),
+            .function_type = function_type,
+        };
+
+        if (self.function_type != .script)
+            self.function.name = (try self.allocator.allocString(self.previous.loc orelse "")).toString();
+        var local = &self.locals.locals[0];
+        local.depth = 0;
+        local.name.loc = "";
+        self.locals.count += 1;
+
+        return self;
+    }
+
     fn currentChunk(self: *Self) *Chunk {
         return &self.function.chunk;
     }
@@ -542,9 +565,14 @@ pub const Parser = struct {
         return try self.identifierConstant(&self.previous);
     }
 
+    fn markInitialised(self: *Self) void {
+        if (self.locals.depth == 0) return;
+        self.locals.locals[self.locals.count - 1].depth = self.locals.depth;
+    }
+
     fn defineVariable(self: *Self, constant: u8) !void {
         if (self.locals.depth > 0) {
-            self.locals.locals[self.locals.count - 1].depth = self.locals.depth;
+            self.markInitialised();
             return;
         }
 
@@ -565,6 +593,31 @@ pub const Parser = struct {
         try self.defineVariable(global);
     }
 
+    fn func(self: *Self, typ: FunctionType) !void {
+        var compiler = try Self.inherit(self, typ);
+        // defer compiler.deinit();
+
+        compiler.beginScope();
+
+        try compiler.consume(.left_paren, "Expected '(' after function name");
+        try compiler.consume(.right_paren, "Expected ')' after parameters");
+        try compiler.consume(.left_brace, "Expected '{' before function body");
+        try compiler.block();
+
+        const f = (try compiler.end()) orelse unreachable;
+        try self.emit(&.{ @enumToInt(OpCode.constant), try self.currentChunk().addConstant(.{ .object = &f.base }) });
+        self.scanner = compiler.scanner;
+        self.previous = compiler.previous;
+        self.current = compiler.current;
+    }
+
+    fn funcDecl(self: *Self) !void {
+        const global = try self.parseVariable("Expect function name");
+        self.markInitialised();
+        try self.func(.function);
+        try self.defineVariable(global);
+    }
+
     fn synchronise(self: *Self) !void {
         while (self.current.typ != .eof) {
             if (self.previous.typ == .semicolon) return;
@@ -579,6 +632,8 @@ pub const Parser = struct {
     fn declaration(self: *Self) anyerror!void {
         if (try self.match(.var_)) {
             try self.varDecl();
+        } else if (try self.match(.fun)) {
+            try self.funcDecl();
         } else {
             try self.statement();
         }
@@ -586,16 +641,21 @@ pub const Parser = struct {
         if (self.panic_mode) try self.synchronise();
     }
 
+    fn end(self: *Self) !?*ds.Function {
+        if (self.had_error)
+            return null;
+
+        try self.emit(&.{ @enumToInt(OpCode.nil), @enumToInt(OpCode.ret) });
+
+        return self.function;
+    }
+
     pub fn compile(self: *Self) !?*ds.Function {
         try self.advance();
         while (!(try self.match(.eof))) {
             try self.declaration();
         }
-        if (self.had_error)
-            return null;
 
-        try self.emit(&.{@enumToInt(OpCode.nil), @enumToInt(OpCode.ret)});
-
-        return self.function;
+        return self.end();
     }
 };
