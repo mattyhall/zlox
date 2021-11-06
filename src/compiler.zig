@@ -639,7 +639,7 @@ pub const Parser = struct {
         try compiler.block();
 
         const f = (try compiler.end()) orelse unreachable;
-        try self.emit(&.{ @enumToInt(OpCode.constant), try self.currentChunk().addConstant(.{ .object = &f.base }) });
+        try self.emit(&.{ @enumToInt(OpCode.closure), try self.currentChunk().addConstant(.{ .object = &f.base }) });
         self.scanner = compiler.scanner;
         self.previous = compiler.previous;
         self.current = compiler.current;

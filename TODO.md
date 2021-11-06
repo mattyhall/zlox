@@ -11,6 +11,7 @@
   * As above but for -255..0
 * Remove double hash of new strings in the string interner
 * Look for variable names in constant table rather than adding them multiple times
+* Store ip locally
 
 # Language features
 * Arrays

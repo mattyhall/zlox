@@ -31,6 +31,7 @@ pub const ObjectType = enum {
     string,
     function,
     native,
+    closure,
 };
 
 pub const Object = struct {
@@ -51,6 +52,10 @@ pub const Object = struct {
         return @fieldParentPtr(Native, "base", self);
     }
 
+    pub fn toClosure(self: *Self) *Closure {
+        return @fieldParentPtr(Closure, "base", self);
+    }
+
     pub fn toZigString(self: *Self) []u8 {
         return self.toString().chars;
     }
@@ -67,6 +72,11 @@ pub const Function = struct {
     arity: u8,
     chunk: vm.Chunk,
     name: ?*String,
+};
+
+pub const Closure = struct {
+    base: Object,
+    function: *Function,
 };
 
 pub const NativeFn = fn (arg_count: u8, args: [*]Value) Value;
@@ -151,6 +161,15 @@ pub const ObjectAllocator = struct {
         return n;
     }
 
+    pub fn newClosure(self: *Self, func: *Function) !*Closure {
+        var c = try self.allocator.create(Closure);
+        c.base.next = null;
+        c.base.typ = .closure;
+        c.function = func;
+        self.addObject(&c.base);
+        return c;
+    }
+
     pub fn deinit(self: *Self) void {
         var obj = self.obj;
         while (obj) |o| {
@@ -166,9 +185,8 @@ pub const ObjectAllocator = struct {
                     f.chunk.deinit();
                     self.allocator.destroy(f);
                 },
-                .native => {
-                    self.allocator.destroy(o.toNative());
-                },
+                .native => self.allocator.destroy(o.toNative()),
+                .closure => self.allocator.destroy(o.toClosure()),
             }
             obj = next;
         }
@@ -197,6 +215,10 @@ pub const Value = union(Type) {
                     try writer.print("<fn {s}>", .{name});
                 },
                 .native => try writer.print("<native fn>", .{}),
+                .closure => {
+                    var name = if (o.toClosure().function.name) |n| n.chars else "script";
+                    try writer.print("<fn {s}>", .{name});
+                },
             },
         }
     }

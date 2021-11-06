@@ -35,6 +35,7 @@ pub const OpCode = enum(u8) {
     jump,
     loop,
     call,
+    closure,
 };
 
 const LineInfo = struct {
@@ -43,7 +44,7 @@ const LineInfo = struct {
 };
 
 const CallFrame = struct {
-    function: *ds.Function,
+    closure: *ds.Closure,
 
     // Current ip of this function. If this function (a) calls another (b) then when b returns we'll reset the vm ip to a's.
     ip: [*]const u8,
@@ -208,6 +209,14 @@ pub const Chunk = struct {
             .jump,
             => return self.disassembleJump(stdout, offset, instruction, .forward),
             .loop => return self.disassembleJump(stdout, offset, instruction, .back),
+            .closure => {
+                const index = self.code.data[offset + 1];
+                const val = self.values.data[index];
+                try stdout.print(" {s:<5} c{} (", .{ "CLOSURE", index });
+                try val.print(stdout);
+                try stdout.print(")\n", .{});
+                return offset + 2;
+            },
         }
     }
 
@@ -335,6 +344,7 @@ pub const Vm = struct {
                         .string => if (op == .equal) a.object == b.object else a.object != b.object,
                         .function => false, // TODO: fix
                         .native => false,
+                        .closure => false,
                     },
                 },
             });
@@ -356,23 +366,23 @@ pub const Vm = struct {
         self.stack.push(.{ .boolean = res });
     }
 
-    fn call(self: *Self, function: *ds.Function, arg_count: usize) !void {
-        if (arg_count != function.arity) {
-            try self.runtimeError("Expected {} arguments but got {}", .{ function.arity, arg_count });
+    fn call(self: *Self, closure: *ds.Closure, arg_count: usize) !void {
+        if (arg_count != closure.function.arity) {
+            try self.runtimeError("Expected {} arguments but got {}", .{ closure.function.arity, arg_count });
             return error.runtime_error;
         }
         var frame = &self.frames[self.frame_count];
         self.frame_count += 1;
-        frame.function = function;
-        frame.ip = function.chunk.code.data;
+        frame.closure = closure;
+        frame.ip = closure.function.chunk.code.data;
         frame.slots = self.stack.top - arg_count - 1;
     }
 
     fn callValue(self: *Self, callee: ds.Value, arg_count: u8) !void {
         if (callee == .object) {
             switch (callee.object.typ) {
-                .function => {
-                    try self.call(callee.object.toFunction(), arg_count);
+                .closure => {
+                    try self.call(callee.object.toClosure(), arg_count);
                     return;
                 },
                 .native => {
@@ -410,7 +420,7 @@ pub const Vm = struct {
 
     fn run(self: *Self) Error!Value {
         var frame = &self.frames[self.frame_count - 1];
-        var chunk = frame.function.chunk;
+        var chunk = frame.closure.function.chunk;
 
         const stdout = std.io.getStdOut().writer();
         var line_offset: usize = 0;
@@ -445,7 +455,7 @@ pub const Vm = struct {
                     self.stack.top = frame.slots;
                     self.stack.push(res);
                     frame = &self.frames[self.frame_count - 1];
-                    chunk = frame.function.chunk;
+                    chunk = frame.closure.function.chunk;
                 },
                 .negate => {
                     if (self.stack.peek(0) != .number) {
@@ -519,7 +529,13 @@ pub const Vm = struct {
                     const arg_count = self.readByte(frame);
                     try self.callValue(self.stack.peek(arg_count), arg_count);
                     frame = &self.frames[self.frame_count - 1];
-                    chunk = frame.function.chunk;
+                    chunk = frame.closure.function.chunk;
+                },
+                .closure => {
+                    const index = self.readByte(frame);
+                    const func = chunk.values.data[index];
+                    const closure = try self.allocator.newClosure(func.object.toFunction());
+                    self.stack.push(.{ .object = &closure.base });
                 },
             }
             first = false;
@@ -532,12 +548,15 @@ pub const Vm = struct {
         try self.defineNative("clock", clockNative);
         timer = try std.time.Timer.start();
 
+        const closure = try self.allocator.newClosure(function);
         self.stack.push(.{ .object = &function.base });
+        _ = self.stack.pop();
+        self.stack.push(.{ .object = &closure.base });
 
         var frame = &self.frames[self.frame_count];
         self.frame_count += 1;
 
-        frame.function = function;
+        frame.closure = closure ;
         frame.ip = function.chunk.code.data;
         frame.slots = &self.stack.data;
 
