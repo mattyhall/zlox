@@ -7,31 +7,36 @@ const ds = @import("ds.zig");
 const Allocator = std.mem.Allocator;
 
 pub fn main() anyerror!void {
-    var data: [16 * 1024]u8 = undefined;
-    var alloc = std.heap.FixedBufferAllocator.init(&data);
+    const allocator = std.heap.c_allocator;
 
-    var obj_allocator = try ds.ObjectAllocator.init(&alloc.allocator);
+    var obj_allocator = try ds.ObjectAllocator.init(allocator);
     defer obj_allocator.deinit();
 
-    var table = try ds.Table.init(&alloc.allocator);
+    var table = try ds.Table.init(allocator);
     defer table.deinit();
 
     const src =
-      \\ var a = 0;
-      \\ if (a == 10) a = 100;
-      \\ else if (a == 20) a = 200;
-      \\ else a = 0;
-      \\ print a;
+        \\ fun fib(n) {
+        \\   if (n < 2) return n;
+        \\   return fib(n-1) + fib(n-2);
+        \\ }
+        \\ var start = clock();
+        \\ print fib(35);
+        \\ print clock() - start;
     ;
-    std.log.debug("{s}", .{src});
-    var scanner = scan.Scanner.init(src);
-    while (true) {
-        const tok = scanner.scanToken();
-        if (tok.typ == .err) unreachable;
-        if (tok.typ == .eof) break;
+    
+    if (false) {
+        std.log.debug("{s}", .{src});
+        var scanner = scan.Scanner.init(src);
+        while (true) {
+            const tok = scanner.scanToken();
+            if (tok.typ == .err) unreachable;
+            if (tok.typ == .eof) break;
 
-        std.log.debug("{} {}", .{tok.typ, tok.line});
+            std.log.debug("{} {}", .{ tok.typ, tok.line });
+        }
     }
+
     var parser = try Parser.init(&obj_allocator, src, .script);
     const func = (try parser.compile()) orelse unreachable;
     try func.chunk.disassemble("script");

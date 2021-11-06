@@ -4,7 +4,7 @@ const ds = @import("ds.zig");
 const Allocator = std.mem.Allocator;
 const Value = ds.Value;
 
-const DEBUG_TRACE_EXECUTION = true;
+const DEBUG_TRACE_EXECUTION = false;
 
 pub const OpCode = enum(u8) {
     ret,
