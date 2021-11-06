@@ -283,10 +283,8 @@ pub const Vm = struct {
     }
 
     inline fn readByte(self: *Self) u8 {
-        var frame = &self.frames[self.frame_count - 1];
-        const v = frame.ip[0];
-        frame.ip += 1;
-        return v;
+        self.frames[self.frame_count - 1].ip += 1;
+        return (self.frames[self.frame_count - 1].ip - 1)[0];
     }
 
     inline fn readShort(self: *Self) u16 {
@@ -431,7 +429,8 @@ pub const Vm = struct {
                 _ = try chunk.disassembleInstruction(stdout, offset, line);
             }
 
-            const op = @intToEnum(OpCode, self.readByte());
+            const byte = self.readByte();
+            const op = @intToEnum(OpCode, byte);
             switch (op) {
                 .constant => {
                     const index = self.readByte();
