@@ -1,5 +1,6 @@
 const std = @import("std");
 const ds = @import("ds.zig");
+const tracy = @import("tracy.zig");
 
 const Allocator = std.mem.Allocator;
 const Value = ds.Value;
@@ -72,6 +73,9 @@ pub const Chunk = struct {
     }
 
     pub fn addConstant(self: *Self, val: Value) !u8 {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         if (self.values.count == 256)
             return error.TooManyConstants;
 
@@ -261,6 +265,7 @@ pub const Vm = struct {
 
     frames: [ds.FRAMES_MAX]CallFrame,
     frame_count: usize,
+    current_frame: *CallFrame,
 
     const Self = @This();
     // TODO: be cleverer
@@ -273,6 +278,7 @@ pub const Vm = struct {
             .stack = undefined,
             .globals = try ds.Table.init(allocator.allocator),
             .frames = undefined,
+            .current_frame = undefined,
             .frame_count = 0,
         };
         return self;
@@ -284,15 +290,24 @@ pub const Vm = struct {
 
     inline fn readByte(self: *Self, frame: *CallFrame) u8 {
         _ = self;
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         frame.ip += 1;
         return (frame.ip - 1)[0];
     }
 
     inline fn readShort(self: *Self, frame: *CallFrame) u16 {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         return @intCast(u16, self.readByte(frame)) << 8 | @intCast(u16, self.readByte(frame));
     }
 
     fn runBinaryOp(self: *Self, op: OpCode) Error!void {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         if (op == .add and self.stack.peek(1).isString() and self.stack.peek(0).isString()) {
             const b = self.stack.pop().toZigString();
             const a = self.stack.pop().toZigString();
@@ -319,6 +334,9 @@ pub const Vm = struct {
     }
 
     fn runBoolBinaryOp(self: *Self, op: OpCode) Error!void {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         if (op == .equal or op == .not_equal) {
             const b = self.stack.pop();
             const a = self.stack.pop();
@@ -357,6 +375,9 @@ pub const Vm = struct {
     }
 
     fn call(self: *Self, function: *ds.Function, arg_count: usize) !void {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         if (arg_count != function.arity) {
             try self.runtimeError("Expected {} arguments but got {}", .{ function.arity, arg_count });
             return error.runtime_error;
@@ -390,6 +411,9 @@ pub const Vm = struct {
     }
 
     fn defineNative(self: *Self, name: []const u8, f: ds.NativeFn) !void {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         self.stack.push(.{ .object = try self.allocator.allocString(name) });
         self.stack.push(.{ .object = &(try self.allocator.newNative(f)).base });
 
@@ -409,6 +433,9 @@ pub const Vm = struct {
     }
 
     fn run(self: *Self) Error!Value {
+        const z = tracy.Zone(@src());
+        defer z.End();
+        
         var frame = &self.frames[self.frame_count - 1];
         var chunk = frame.function.chunk;
 
@@ -418,6 +445,7 @@ pub const Vm = struct {
         var first = true;
 
         while (true) {
+            const z_loop = tracy.ZoneN(@src(), "run while setup");
             if (comptime DEBUG_TRACE_EXECUTION) {
                 var line: Chunk.LineDissasemble = if (first) .{ .new = chunk.lines.data[0].line } else .old;
                 if (current_line_length == 0) {
@@ -432,12 +460,19 @@ pub const Vm = struct {
 
             const byte = self.readByte(frame);
             const op = @intToEnum(OpCode, byte);
+            z_loop.End();
             switch (op) {
                 .constant => {
+                    const z_ins = tracy.ZoneN(@src(), "constant");
+                    defer z_ins.End();
+                    
                     const index = self.readByte(frame);
                     self.stack.push(chunk.values.data[index]);
                 },
                 .ret => {
+                    const z_ins = tracy.ZoneN(@src(), "ret");
+                    defer z_ins.End();
+
                     const res = self.stack.pop();
                     self.frame_count -= 1;
                     if (self.frame_count == 0)
@@ -448,6 +483,9 @@ pub const Vm = struct {
                     chunk = frame.function.chunk;
                 },
                 .negate => {
+                    const z_ins = tracy.ZoneN(@src(), "negate");
+                    defer z_ins.End();
+
                     if (self.stack.peek(0) != .number) {
                         try self.runtimeError("Operand must be a number", .{});
                         return Error.runtime_error;
@@ -456,25 +494,68 @@ pub const Vm = struct {
                     const val = self.stack.pop();
                     self.stack.push(.{ .number = -(val.number) });
                 },
-                .not => self.stack.push(.{ .boolean = self.stack.pop().falsey() }),
-                .true_ => self.stack.push(.{ .boolean = true }),
-                .false_ => self.stack.push(.{ .boolean = false }),
-                .nil => self.stack.push(.{ .nil = undefined }),
-                .add, .subtract, .multiply, .divide => try self.runBinaryOp(op),
-                .equal, .not_equal, .less, .less_equal, .greater, .greater_equal => try self.runBoolBinaryOp(op),
+                .not => {
+                    const z_ins = tracy.ZoneN(@src(), "not");
+                    defer z_ins.End();
+
+                    self.stack.push(.{ .boolean = self.stack.pop().falsey() });
+                },
+                .true_ => {
+                    const z_ins = tracy.ZoneN(@src(), "true");
+                    defer z_ins.End();
+
+                    self.stack.push(.{ .boolean = true });
+                },
+                .false_ => {
+                    const z_ins = tracy.ZoneN(@src(), "false");
+                    defer z_ins.End();
+
+                    self.stack.push(.{ .boolean = false });
+                },
+                .nil => {
+                    const z_ins = tracy.ZoneN(@src(), "nil");
+                    defer z_ins.End();
+
+                    self.stack.push(.{ .nil = undefined });
+                },
+                .add, .subtract, .multiply, .divide => {
+                    const z_ins = tracy.ZoneN(@src(), "+-*/");
+                    defer z_ins.End();
+
+                    try self.runBinaryOp(op);
+                },
+                .equal, .not_equal, .less, .less_equal, .greater, .greater_equal =>  {
+                    const z_ins = tracy.ZoneN(@src(), "==!=<<=>>=");
+                    defer z_ins.End();
+
+                    try self.runBoolBinaryOp(op);
+                },
                 .print => {
+                    const z_ins = tracy.ZoneN(@src(), "print");
+                    defer z_ins.End();
+
                     const val = self.stack.pop();
                     try val.print(stdout);
                     try stdout.print("\n", .{});
                 },
-                .pop => _ = self.stack.pop(),
+                .pop => {
+                    const z_ins = tracy.ZoneN(@src(), "pop");
+                    defer z_ins.End();
+                    _ = self.stack.pop();
+                },
                 .define_global => {
+                    const z_ins = tracy.ZoneN(@src(), "define global");
+                    defer z_ins.End();
+
                     const index = self.readByte(frame);
                     const name = chunk.values.data[index].object.toString();
                     _ = try self.globals.insert(name, self.stack.peek(0));
                     _ = self.stack.pop();
                 },
                 .get_global => {
+                    const z_ins = tracy.ZoneN(@src(), "get global");
+                    defer z_ins.End();
+
                     const index = self.readByte(frame);
                     const name = chunk.values.data[index].object.toString();
                     const val = self.globals.find(name);
@@ -486,6 +567,9 @@ pub const Vm = struct {
                     }
                 },
                 .set_global => {
+                    const z_ins = tracy.ZoneN(@src(), "set global");
+                    defer z_ins.End();
+
                     const index = self.readByte(frame);
                     const name = chunk.values.data[index].object.toString();
                     if (!try self.globals.insert(name, self.stack.peek(0))) {
@@ -495,27 +579,45 @@ pub const Vm = struct {
                     }
                 },
                 .get_local => {
+                    const z_ins = tracy.ZoneN(@src(), "get local");
+                    defer z_ins.End();
+
                     const index = self.readByte(frame);
                     self.stack.push(frame.slots[index]);
                 },
                 .set_local => {
+                    const z_ins = tracy.ZoneN(@src(), "set local");
+                    defer z_ins.End();
+
                     const index = self.readByte(frame);
                     frame.slots[index] = self.stack.peek(0);
                 },
                 .jump_false => {
+                    const z_ins = tracy.ZoneN(@src(), "jmpf");
+                    defer z_ins.End();
+
                     const offset = self.readShort(frame);
                     if (self.stack.peek(0).falsey()) {
                         frame.ip += offset;
                     }
                 },
                 .jump => {
+                    const z_ins = tracy.ZoneN(@src(), "jmp");
+                    defer z_ins.End();
+
                     const offset = self.readShort(frame);
                     frame.ip += offset;
                 },
                 .loop => {
+                    const z_ins = tracy.ZoneN(@src(), "loop");
+                    defer z_ins.End();
+
                     frame.ip -= self.readShort(frame) + 1;
                 },
                 .call => {
+                    const z_ins = tracy.ZoneN(@src(), "call");
+                    defer z_ins.End();
+
                     const arg_count = self.readByte(frame);
                     try self.callValue(self.stack.peek(arg_count), arg_count);
                     frame = &self.frames[self.frame_count - 1];
@@ -527,6 +629,9 @@ pub const Vm = struct {
     }
 
     pub fn interpret(self: *Self, function: *ds.Function) Error!Value {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         self.stack.reset();
 
         try self.defineNative("clock", clockNative);

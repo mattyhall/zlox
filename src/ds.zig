@@ -1,5 +1,6 @@
 const std = @import("std");
 const vm = @import("vm.zig");
+const tracy = @import("tracy.zig");
 const Allocator = std.mem.Allocator;
 
 const INITIAL_TABLE_CAPACITY = 4;
@@ -12,6 +13,9 @@ const MAX_STACK = FRAMES_MAX * 256;
 pub const FLOAT_PRECISION = 6;
 
 fn hashBytes(bytes: []const u8) u32 {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
     var hash: u32 = 2166136261;
     for (bytes) |b| {
         hash ^= b;
@@ -92,6 +96,9 @@ pub const ObjectAllocator = struct {
     }
 
     fn addObject(self: *Self, obj: *Object) void {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         if (self.obj) |old| {
             obj.next = old;
             self.obj = obj;
@@ -101,6 +108,9 @@ pub const ObjectAllocator = struct {
     }
 
     pub fn takeString(self: *Self, chars: []u8) !*Object {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         const entry = self.string_interner.findString(chars);
         if (entry) |e| {
             self.allocator.free(chars);
@@ -120,6 +130,9 @@ pub const ObjectAllocator = struct {
     }
 
     pub fn concatenateStrings(self: *Self, a: []const u8, b: []const u8) !*Object {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         const s = try self.allocator.alloc(u8, a.len + b.len);
         std.mem.copy(u8, s[0 .. a.len + 1], a);
         std.mem.copy(u8, s[a.len..], b);
@@ -127,11 +140,17 @@ pub const ObjectAllocator = struct {
     }
 
     pub fn allocString(self: *Self, chars: []const u8) !*Object {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         const s = try self.allocator.dupe(u8, chars);
         return self.takeString(s);
     }
 
     pub fn newFunction(self: *Self) !*Function {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         var f = try self.allocator.create(Function);
         f.base.next = null;
         f.base.typ = .function;
@@ -143,6 +162,9 @@ pub const ObjectAllocator = struct {
     }
 
     pub fn newNative(self: *Self, func: NativeFn) !*Native {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         var n = try self.allocator.create(Native);
         n.base.next = null;
         n.base.typ = .native;
@@ -290,16 +312,25 @@ pub const Stack = struct {
     }
 
     pub fn push(self: *Self, value: Value) void {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         self.top[0] = value;
         self.top += 1;
     }
 
     pub fn pop(self: *Self) Value {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         self.top -= 1;
         return self.top[0];
     }
 
     pub fn peek(self: *const Self, n: usize) Value {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         const ptr = self.top - 1 - n;
         return ptr[0];
     }
@@ -354,6 +385,9 @@ pub const Table = struct {
     }
 
     fn findEntry(self: *const Self, key: *String) *Entry {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         var index = key.hash % self.buckets.len;
         var first_tombstone: ?*Entry = null;
         while (true) {
@@ -375,6 +409,9 @@ pub const Table = struct {
     }
 
     fn findString(self: *const Self, key: []const u8) ?*Entry {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         const hash = hashBytes(key);
         var index = hash % self.buckets.len;
         while (true) {
@@ -394,12 +431,18 @@ pub const Table = struct {
     }
 
     pub fn find(self: *const Self, key: *String) ?*Entry {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         const entry = self.findEntry(key);
         if (entry.key == null) return null;
         return entry;
     }
 
     fn realloc(self: *Self) !void {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         var new_buckets = try self.allocator.alloc(Entry, self.buckets.len * 2);
         for (new_buckets) |*entry| {
             entry.key = null;
@@ -420,6 +463,9 @@ pub const Table = struct {
     }
 
     fn insertUnchecked(self: *Self, key: *String, value: Value) !bool {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         var entry = self.findEntry(key);
         var exists = entry.key != null;
         if (entry.key == null) {
@@ -431,6 +477,9 @@ pub const Table = struct {
     }
 
     pub fn insert(self: *Self, key: *String, value: Value) !bool {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         if (@intToFloat(f32, self.count + 1) / @intToFloat(f32, self.buckets.len) > MAX_LOAD)
             try self.realloc();
 
@@ -438,6 +487,9 @@ pub const Table = struct {
     }
 
     pub fn delete(self: *Self, key: *String) void {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         var entry = self.findEntry(key);
         if (entry.key != null) {
             entry.key = null;
@@ -446,6 +498,9 @@ pub const Table = struct {
     }
 
     pub fn print(self: *const Self) !void {
+        const z = tracy.Zone(@src());
+        defer z.End();
+
         const stdout = std.io.getStdOut().writer();
         try stdout.print("{{", .{});
         for (self.buckets) |entry| {

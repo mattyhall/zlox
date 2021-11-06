@@ -1,4 +1,6 @@
 const std = @import("std");
+const build_tracy = @import("build_tracy.zig");
+const fs = std.fs;
 
 pub fn build(b: *std.build.Builder) void {
     // Standard target options allows the person running `zig build` to choose
@@ -15,6 +17,10 @@ pub fn build(b: *std.build.Builder) void {
     exe.linkLibC();
     exe.setTarget(target);
     exe.setBuildMode(mode);
+    
+    exe.want_lto = false;
+    build_tracy.link(exe, "../tracy/");
+
     exe.install();
 
     const run_cmd = exe.run();
