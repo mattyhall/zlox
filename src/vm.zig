@@ -282,13 +282,14 @@ pub const Vm = struct {
         self.stack.reset();
     }
 
-    inline fn readByte(self: *Self) u8 {
-        self.frames[self.frame_count - 1].ip += 1;
-        return (self.frames[self.frame_count - 1].ip - 1)[0];
+    inline fn readByte(self: *Self, frame: *CallFrame) u8 {
+        _ = self;
+        frame.ip += 1;
+        return (frame.ip - 1)[0];
     }
 
-    inline fn readShort(self: *Self) u16 {
-        return @intCast(u16, self.readByte()) << 8 | @intCast(u16, self.readByte());
+    inline fn readShort(self: *Self, frame: *CallFrame) u16 {
+        return @intCast(u16, self.readByte(frame)) << 8 | @intCast(u16, self.readByte(frame));
     }
 
     fn runBinaryOp(self: *Self, op: OpCode) Error!void {
@@ -429,11 +430,11 @@ pub const Vm = struct {
                 _ = try chunk.disassembleInstruction(stdout, offset, line);
             }
 
-            const byte = self.readByte();
+            const byte = self.readByte(frame);
             const op = @intToEnum(OpCode, byte);
             switch (op) {
                 .constant => {
-                    const index = self.readByte();
+                    const index = self.readByte(frame);
                     self.stack.push(chunk.values.data[index]);
                 },
                 .ret => {
@@ -468,13 +469,13 @@ pub const Vm = struct {
                 },
                 .pop => _ = self.stack.pop(),
                 .define_global => {
-                    const index = self.readByte();
+                    const index = self.readByte(frame);
                     const name = chunk.values.data[index].object.toString();
                     _ = try self.globals.insert(name, self.stack.peek(0));
                     _ = self.stack.pop();
                 },
                 .get_global => {
-                    const index = self.readByte();
+                    const index = self.readByte(frame);
                     const name = chunk.values.data[index].object.toString();
                     const val = self.globals.find(name);
                     if (val) |v| {
@@ -485,7 +486,7 @@ pub const Vm = struct {
                     }
                 },
                 .set_global => {
-                    const index = self.readByte();
+                    const index = self.readByte(frame);
                     const name = chunk.values.data[index].object.toString();
                     if (!try self.globals.insert(name, self.stack.peek(0))) {
                         self.globals.delete(name);
@@ -494,28 +495,28 @@ pub const Vm = struct {
                     }
                 },
                 .get_local => {
-                    const index = self.readByte();
+                    const index = self.readByte(frame);
                     self.stack.push(frame.slots[index]);
                 },
                 .set_local => {
-                    const index = self.readByte();
+                    const index = self.readByte(frame);
                     frame.slots[index] = self.stack.peek(0);
                 },
                 .jump_false => {
-                    const offset = self.readShort();
+                    const offset = self.readShort(frame);
                     if (self.stack.peek(0).falsey()) {
                         frame.ip += offset;
                     }
                 },
                 .jump => {
-                    const offset = self.readShort();
+                    const offset = self.readShort(frame);
                     frame.ip += offset;
                 },
                 .loop => {
-                    frame.ip -= self.readShort() + 1;
+                    frame.ip -= self.readShort(frame) + 1;
                 },
                 .call => {
-                    const arg_count = self.readByte();
+                    const arg_count = self.readByte(frame);
                     try self.callValue(self.stack.peek(arg_count), arg_count);
                     frame = &self.frames[self.frame_count - 1];
                     chunk = frame.function.chunk;
