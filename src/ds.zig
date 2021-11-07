@@ -96,6 +96,8 @@ pub const Native = struct {
 pub const Upvalue = struct {
     base: Object,
     location: *Value,
+    next: ?*Upvalue,
+    closed: Value,
 };
 
 pub const ObjectAllocator = struct {
@@ -189,6 +191,8 @@ pub const ObjectAllocator = struct {
         u.base.next = null;
         u.base.typ = .upvalue;
         u.location = value;
+        u.next = null;
+        u.closed = .nil;
         self.addObject(&u.base);
         return u;
     }

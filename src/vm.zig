@@ -38,6 +38,7 @@ pub const OpCode = enum(u8) {
     closure,
     get_upvalue,
     set_upvalue,
+    close_upvalue,
 };
 
 const LineInfo = struct {
@@ -115,6 +116,7 @@ pub const Chunk = struct {
             .less_equal => "LTE",
             .print => "PRINT",
             .pop => "POP",
+            .close_upvalue => "CLOSE",
             else => unreachable,
         };
         try stdout.print(" {s:<5}\n", .{s});
@@ -199,6 +201,7 @@ pub const Chunk = struct {
             .less_equal,
             .print,
             .pop,
+            .close_upvalue,
             => return disassembleSimpleInstruction(stdout, offset, instruction),
             .constant,
             .define_global,
@@ -288,6 +291,8 @@ pub const Vm = struct {
     frames: [ds.FRAMES_MAX]CallFrame,
     frame_count: usize,
 
+    open_upvalues: ?*ds.Upvalue,
+
     const Self = @This();
     // TODO: be cleverer
     pub const Error = anyerror; //if (DEBUG_TRACE_EXECUTION) anyerror else InterpretError;
@@ -300,6 +305,7 @@ pub const Vm = struct {
             .globals = try ds.Table.init(allocator.allocator),
             .frames = undefined,
             .frame_count = 0,
+            .open_upvalues = null,
         };
         return self;
     }
@@ -418,7 +424,33 @@ pub const Vm = struct {
     }
 
     fn captureUpvalue(self: *Self, local: *Value) !*ds.Upvalue {
-        return try self.allocator.newUpvalue(local);
+        var prev_upvalue: ?*ds.Upvalue = null;
+        var upvalue = self.open_upvalues;
+        while (upvalue != null and @ptrToInt(upvalue.?.location) > @ptrToInt(local)) {
+            prev_upvalue = upvalue;
+            upvalue = upvalue.?.next;
+        }
+
+        if (upvalue != null and upvalue.?.location == local)
+            return upvalue.?;
+
+        var created_upvalue = try self.allocator.newUpvalue(local);
+        created_upvalue.next = upvalue;
+        if (prev_upvalue == null) {
+            self.open_upvalues = created_upvalue;
+        } else {
+            prev_upvalue.?.next = created_upvalue;
+        }
+        return created_upvalue;
+    }
+
+    fn closeUpvalues(self: *Self, last: *Value) void {
+        while (self.open_upvalues != null and @ptrToInt(self.open_upvalues.?.location) >= @ptrToInt(last)) {
+            const upvalue = self.open_upvalues.?;
+            upvalue.closed = upvalue.location.*;
+            upvalue.location = &upvalue.closed;
+            self.open_upvalues = upvalue.next;
+        }
     }
 
     fn defineNative(self: *Self, name: []const u8, f: ds.NativeFn) !void {
@@ -471,6 +503,7 @@ pub const Vm = struct {
                 },
                 .ret => {
                     const res = self.stack.pop();
+                    self.closeUpvalues(&frame.slots[0]);
                     self.frame_count -= 1;
                     if (self.frame_count == 0)
                         return res;
@@ -578,6 +611,10 @@ pub const Vm = struct {
                 .set_upvalue => {
                     const slot = self.readByte(frame);
                     frame.closure.upvalues.data[slot].location.* = self.stack.peek(0);
+                },
+                .close_upvalue => {
+                    self.closeUpvalues(&(self.stack.top - 1)[0]);
+                    _ = self.stack.pop();
                 },
             }
             first = false;

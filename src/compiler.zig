@@ -30,6 +30,7 @@ fn identifiersEql(a: *const Token, b: *const Token) bool {
 pub const Local = struct {
     name: Token,
     depth: isize,
+    captured: bool,
 };
 
 pub const Locals = struct {
@@ -154,6 +155,7 @@ pub const Parser = struct {
         var local = &self.locals.locals[0];
         local.depth = 0;
         local.name.loc = "";
+        local.captured = false;
         self.locals.count += 1;
 
         return self;
@@ -334,6 +336,7 @@ pub const Parser = struct {
         if (self.enclosing == null) return null;
 
         if (try self.enclosing.?.resolveLocal(name)) |local| {
+            self.enclosing.?.locals.locals[local].captured = true;
             return try self.addUpvalue(local, true);
         }
 
@@ -487,7 +490,11 @@ pub const Parser = struct {
         self.locals.depth -= 1;
 
         while (self.locals.count > 0 and self.locals.locals[self.locals.count - 1].depth > self.locals.depth) {
-            try self.emit(&.{@enumToInt(OpCode.pop)});
+            if (self.locals.locals[self.locals.count - 1].captured) {
+                try self.emit(&.{@enumToInt(OpCode.close_upvalue)});
+            } else {
+              try self.emit(&.{@enumToInt(OpCode.pop)});
+            }
             self.locals.count -= 1;
         }
     }
@@ -616,6 +623,7 @@ pub const Parser = struct {
         self.locals.count += 1;
         local.depth = -1;
         local.name = token;
+        local.captured = false;
     }
 
     fn declareVariable(self: *Self) !void {

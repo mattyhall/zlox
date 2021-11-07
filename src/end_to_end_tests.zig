@@ -307,30 +307,38 @@ test "closure" {
     var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
-    _ = run(&alloc,
-        \\ fun outer() {
-        \\   var a = "outside";
-        \\   fun inner() {
-        \\     print a;
+    const range =
+        \\ fun range(start, end) {
+        \\   var current = start;
+        \\   fun closure() {
+        \\     if (current >= end) return nil;
+        \\     var tmp = current;
+        \\     current = current + 1;
+        \\     return tmp;
         \\   }
-        \\   inner();
+        \\   return closure;
         \\ }
-        \\ outer();
-    );
-    _ = run(&alloc,
-        \\ fun outer() {
-        \\   var a = "outside";
-        \\   fun middle() {
-        \\     fun inner() {
-        \\       print a;
-        \\     }
-        \\     return inner;
-        \\   }
-        \\   return middle;
-        \\ }
-        \\ var middle = outer();
-        \\ var inner = middle();
-        \\ inner();
-    );
+    ;
 
+    try std.testing.expectEqual(ds.Value{ .number = 3.0 }, run(&alloc, range ++
+        \\ var gen = range(1, 10);
+        \\ gen();
+        \\ gen();
+        \\ return gen();
+    ));
+    try std.testing.expectEqual(ds.Type.nil, @as(ds.Type, run(&alloc, range ++
+        \\ var gen = range(1, 3);
+        \\ gen();
+        \\ gen();
+        \\ return gen();
+    )));
+    try std.testing.expectEqual(ds.Value{ .number = 6.0 }, run(&alloc, range ++
+        \\ var gen = range(1, 4);
+        \\ var count = 0;
+        \\ var i = 0;
+        \\ while (i = gen()) {
+        \\   count = count + i;
+        \\ }
+        \\ return count;
+    ));
 }
