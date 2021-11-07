@@ -12,6 +12,7 @@
 * Remove double hash of new strings in the string interner
 * Look for variable names in constant table rather than adding them multiple times
 * Store ip locally
+* Only use closures where needed
 
 # Language features
 * Arrays

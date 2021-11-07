@@ -36,6 +36,8 @@ pub const OpCode = enum(u8) {
     loop,
     call,
     closure,
+    get_upvalue,
+    set_upvalue,
 };
 
 const LineInfo = struct {
@@ -141,6 +143,8 @@ pub const Chunk = struct {
             .get_local => "GETL ",
             .set_local => "SETL ",
             .call => "CALL ",
+            .get_upvalue => "GETU ",
+            .set_upvalue => "SETU ",
             else => unreachable,
         };
         try stdout.print(" {s:<7}{} ", .{ s, index });
@@ -204,6 +208,8 @@ pub const Chunk = struct {
             .get_local,
             .set_local,
             .call,
+            .get_upvalue,
+            .set_upvalue,
             => return self.disassembleByteInstruction(stdout, offset, instruction),
             .jump_false,
             .jump,
@@ -215,7 +221,18 @@ pub const Chunk = struct {
                 try stdout.print(" {s:<5} c{} (", .{ "CLOSURE", index });
                 try val.print(stdout);
                 try stdout.print(")\n", .{});
-                return offset + 2;
+                var increase: usize = 2;
+                var i: u8 = 0;
+                const func = val.object.toFunction();
+                while (i < func.upvalue_count) : (i += 1) {
+                    const is_local = self.code.data[offset + increase];
+                    increase += 1;
+                    const u_index = self.code.data[offset + increase];
+                    increase += 1;
+                    const label: []const u8 = if (is_local == 1) "local" else "upvalue";
+                    try stdout.print("{x:0>4}    |       {s} {}\n", .{ offset + increase - 2, label, u_index });
+                }
+                return offset + increase;
             },
         }
     }
@@ -345,6 +362,7 @@ pub const Vm = struct {
                         .function => false, // TODO: fix
                         .native => false,
                         .closure => false,
+                        .upvalue => unreachable,
                     },
                 },
             });
@@ -397,6 +415,10 @@ pub const Vm = struct {
         }
         try self.runtimeError("Can only call functions and classes", .{});
         return error.runtime_error;
+    }
+
+    fn captureUpvalue(self: *Self, local: *Value) !*ds.Upvalue {
+        return try self.allocator.newUpvalue(local);
     }
 
     fn defineNative(self: *Self, name: []const u8, f: ds.NativeFn) !void {
@@ -536,6 +558,26 @@ pub const Vm = struct {
                     const func = chunk.values.data[index];
                     const closure = try self.allocator.newClosure(func.object.toFunction());
                     self.stack.push(.{ .object = &closure.base });
+
+                    try closure.upvalues.reserve(closure.function.upvalue_count);
+                    var i: usize = 0;
+                    while (i < closure.function.upvalue_count) : (i += 1) {
+                        const is_local = self.readByte(frame);
+                        const s_index = self.readByte(frame);
+                        if (is_local == 1) {
+                            closure.upvalues.data[i] = try self.captureUpvalue(&frame.slots[s_index]);
+                        } else {
+                            closure.upvalues.data[i] = frame.closure.upvalues.data[s_index];
+                        }
+                    }
+                },
+                .get_upvalue => {
+                    const slot = self.readByte(frame);
+                    self.stack.push(frame.closure.upvalues.data[slot].location.*);
+                },
+                .set_upvalue => {
+                    const slot = self.readByte(frame);
+                    frame.closure.upvalues.data[slot].location.* = self.stack.peek(0);
                 },
             }
             first = false;
@@ -556,7 +598,7 @@ pub const Vm = struct {
         var frame = &self.frames[self.frame_count];
         self.frame_count += 1;
 
-        frame.closure = closure ;
+        frame.closure = closure;
         frame.ip = function.chunk.code.data;
         frame.slots = &self.stack.data;
 

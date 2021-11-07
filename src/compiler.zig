@@ -44,6 +44,11 @@ pub const Locals = struct {
     }
 };
 
+pub const Upvalue = struct {
+    index: u8,
+    is_local: bool,
+};
+
 const Jmp = struct {
     chunk: *Chunk,
     start: usize,
@@ -71,9 +76,12 @@ pub const Parser = struct {
     panic_mode: bool,
 
     locals: Locals,
+    upvalues: [256]Upvalue,
 
     function: *ds.Function,
     function_type: FunctionType,
+
+    enclosing: ?*Self,
 
     const Self = @This();
 
@@ -139,6 +147,8 @@ pub const Parser = struct {
             .locals = Locals.init(),
             .function = try allocator.newFunction(),
             .function_type = function_type,
+            .enclosing = null,
+            .upvalues = undefined,
         };
 
         var local = &self.locals.locals[0];
@@ -149,7 +159,7 @@ pub const Parser = struct {
         return self;
     }
 
-    pub fn inherit(other: *const Self, function_type: FunctionType) !Self {
+    pub fn inherit(other: *Self, function_type: FunctionType) !Self {
         var self: Self = .{
             .allocator = other.allocator,
             .scanner = other.scanner,
@@ -160,6 +170,8 @@ pub const Parser = struct {
             .locals = Locals.init(),
             .function = try other.allocator.newFunction(),
             .function_type = function_type,
+            .enclosing = other,
+            .upvalues = undefined,
         };
 
         if (self.function_type != .script)
@@ -296,6 +308,43 @@ pub const Parser = struct {
         return null;
     }
 
+    fn addUpvalue(self: *Self, index: u8, is_local: bool) !u8 {
+        const upvalue_count = self.function.upvalue_count;
+
+        var i: u8 = 0;
+        while (i < upvalue_count) : (i += 1) {
+            const upval = &self.upvalues[i];
+            if (upval.index == index and upval.is_local == is_local) {
+                return i;
+            }
+        }
+
+        if (upvalue_count == 255) {
+            try self.err("Too many closure variables in function");
+            return 0;
+        }
+
+        self.upvalues[upvalue_count].is_local = is_local;
+        self.upvalues[upvalue_count].index = index;
+        self.function.upvalue_count += 1;
+        return self.function.upvalue_count - 1;
+    }
+
+    fn resolveUpvalue(self: *Self, name: *const Token) anyerror!?u8 {
+        if (self.enclosing == null) return null;
+
+        if (try self.enclosing.?.resolveLocal(name)) |local| {
+            return try self.addUpvalue(local, true);
+        }
+
+        if (try self.enclosing.?.resolveUpvalue(name)) |upval| {
+            return try self.addUpvalue(upval, false);
+        }
+
+
+        return null;
+    }
+
     fn namedVariable(self: *Self, name: *const Token, can_assign: bool) !void {
         var get: OpCode = undefined;
         var set: OpCode = undefined;
@@ -305,9 +354,15 @@ pub const Parser = struct {
             get = .get_local;
             set = .set_local;
         } else {
-            get = .get_global;
-            set = .set_global;
-            arg = try self.identifierConstant(name);
+            arg = try self.resolveUpvalue(name);
+            if (arg != null) {
+                get = .get_upvalue;
+                set = .set_upvalue;
+            } else {
+                get = .get_global;
+                set = .set_global;
+                arg = try self.identifierConstant(name);
+            }
         }
 
         if (can_assign and try self.match(.equal)) {
@@ -624,9 +679,10 @@ pub const Parser = struct {
         try compiler.consume(.left_paren, "Expected '(' after function name");
         if (!compiler.check(.right_paren)) {
             while (true) {
-                compiler.function.arity += 1;
-                if (compiler.function.arity > 255)
+                if (compiler.function.arity == 255)
                     try compiler.errorAtCurrent("Can't have more thatn 255 parameters");
+
+                compiler.function.arity += 1;
 
                 const constant = try compiler.parseVariable("Expect parameter name");
                 try compiler.defineVariable(constant);
@@ -640,6 +696,12 @@ pub const Parser = struct {
 
         const f = (try compiler.end()) orelse unreachable;
         try self.emit(&.{ @enumToInt(OpCode.closure), try self.currentChunk().addConstant(.{ .object = &f.base }) });
+
+        var i: usize = 0;
+        while (i < f.upvalue_count) : (i += 1) {
+            try self.emit(&.{ if (compiler.upvalues[i].is_local) @as(u8, 1) else @as(u8, 0), compiler.upvalues[i].index });
+        }
+
         self.scanner = compiler.scanner;
         self.previous = compiler.previous;
         self.current = compiler.current;

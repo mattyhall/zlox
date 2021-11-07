@@ -32,6 +32,7 @@ pub const ObjectType = enum {
     function,
     native,
     closure,
+    upvalue,
 };
 
 pub const Object = struct {
@@ -56,6 +57,10 @@ pub const Object = struct {
         return @fieldParentPtr(Closure, "base", self);
     }
 
+    pub fn toUpvalue(self: *Self) *Upvalue {
+        return @fieldParentPtr(Upvalue, "base", self);
+    }
+
     pub fn toZigString(self: *Self) []u8 {
         return self.toString().chars;
     }
@@ -70,6 +75,7 @@ pub const String = struct {
 pub const Function = struct {
     base: Object,
     arity: u8,
+    upvalue_count: u8,
     chunk: vm.Chunk,
     name: ?*String,
 };
@@ -77,6 +83,7 @@ pub const Function = struct {
 pub const Closure = struct {
     base: Object,
     function: *Function,
+    upvalues: DynamicArray(*Upvalue),
 };
 
 pub const NativeFn = fn (arg_count: u8, args: [*]Value) Value;
@@ -84,6 +91,11 @@ pub const NativeFn = fn (arg_count: u8, args: [*]Value) Value;
 pub const Native = struct {
     base: Object,
     function: NativeFn,
+};
+
+pub const Upvalue = struct {
+    base: Object,
+    location: *Value,
 };
 
 pub const ObjectAllocator = struct {
@@ -147,6 +159,7 @@ pub const ObjectAllocator = struct {
         f.base.typ = .function;
         f.arity = 0;
         f.name = null;
+        f.upvalue_count = 0;
         f.chunk = vm.Chunk.init(self.allocator);
         self.addObject(&f.base);
         return f;
@@ -166,8 +179,18 @@ pub const ObjectAllocator = struct {
         c.base.next = null;
         c.base.typ = .closure;
         c.function = func;
+        c.upvalues = DynamicArray(*Upvalue).init(self.allocator);
         self.addObject(&c.base);
         return c;
+    }
+
+    pub fn newUpvalue(self: *Self, value: *Value) !*Upvalue {
+        var u = try self.allocator.create(Upvalue);
+        u.base.next = null;
+        u.base.typ = .upvalue;
+        u.location = value;
+        self.addObject(&u.base);
+        return u;
     }
 
     pub fn deinit(self: *Self) void {
@@ -186,7 +209,12 @@ pub const ObjectAllocator = struct {
                     self.allocator.destroy(f);
                 },
                 .native => self.allocator.destroy(o.toNative()),
-                .closure => self.allocator.destroy(o.toClosure()),
+                .closure => {
+                    const closure = o.toClosure();
+                    closure.upvalues.deinit();
+                    self.allocator.destroy(closure);
+                },
+                .upvalue => self.allocator.destroy(o.toUpvalue()),
             }
             obj = next;
         }
@@ -219,6 +247,7 @@ pub const Value = union(Type) {
                     var name = if (o.toClosure().function.name) |n| n.chars else "script";
                     try writer.print("<fn {s}>", .{name});
                 },
+                .upvalue => try writer.print("upvalue", .{}),
             },
         }
     }
@@ -265,6 +294,15 @@ pub fn DynamicArray(comptime T: type) type {
                 .count = 0,
                 .capacity = 0,
             };
+        }
+
+        pub fn reserve(self: *Self, n: usize) !void {
+            if (self.capacity == 0) {
+                self.data = (try self.allocator.alloc(T, n)).ptr;
+            } else {
+                self.data = (try self.allocator.realloc(self.items(), n)).ptr;
+            }
+            self.capacity = n;
         }
 
         pub fn items(self: *Self) []T {

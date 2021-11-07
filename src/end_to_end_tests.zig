@@ -291,7 +291,6 @@ test "fun" {
         \\ return multiply(10, 2);
     ));
 
-
     try fails(&alloc,
         \\ fun foo(a) {
         \\ }
@@ -302,4 +301,36 @@ test "fun" {
         \\ }
         \\ foo(10, 20);
     );
+}
+
+test "closure" {
+    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    defer alloc.deinit();
+
+    _ = run(&alloc,
+        \\ fun outer() {
+        \\   var a = "outside";
+        \\   fun inner() {
+        \\     print a;
+        \\   }
+        \\   inner();
+        \\ }
+        \\ outer();
+    );
+    _ = run(&alloc,
+        \\ fun outer() {
+        \\   var a = "outside";
+        \\   fun middle() {
+        \\     fun inner() {
+        \\       print a;
+        \\     }
+        \\     return inner;
+        \\   }
+        \\   return middle;
+        \\ }
+        \\ var middle = outer();
+        \\ var inner = middle();
+        \\ inner();
+    );
+
 }
