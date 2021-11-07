@@ -493,7 +493,7 @@ pub const Parser = struct {
             if (self.locals.locals[self.locals.count - 1].captured) {
                 try self.emit(&.{@enumToInt(OpCode.close_upvalue)});
             } else {
-              try self.emit(&.{@enumToInt(OpCode.pop)});
+                try self.emit(&.{@enumToInt(OpCode.pop)});
             }
             self.locals.count -= 1;
         }
@@ -707,7 +707,7 @@ pub const Parser = struct {
 
         var i: usize = 0;
         while (i < f.upvalue_count) : (i += 1) {
-            try self.emit(&.{ if (compiler.upvalues[i].is_local) @as(u8, 1) else @as(u8, 0), compiler.upvalues[i].index });
+            try self.emit(&.{ @boolToInt(compiler.upvalues[i].is_local), compiler.upvalues[i].index });
         }
 
         self.scanner = compiler.scanner;

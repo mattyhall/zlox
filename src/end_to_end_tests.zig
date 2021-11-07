@@ -341,4 +341,22 @@ test "closure" {
         \\ }
         \\ return count;
     ));
+
+    try std.testing.expectEqual(ds.Value { .number = 3.0 }, run(&alloc,
+        \\ fun outer() {
+        \\   var a = 1;
+        \\   fun middle() {
+        \\     a = a + 1;
+        \\     fun inner() {
+        \\       a = a + 1;
+        \\       return a;
+        \\     }
+        \\     return inner;
+        \\   }
+        \\   return middle;
+        \\ }
+        \\ var middle = outer();
+        \\ var inner = middle();
+        \\ return inner();
+    ));
 }
