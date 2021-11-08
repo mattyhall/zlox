@@ -8,6 +8,9 @@ const DynamicArray = ds.DynamicArray;
 
 pub const FLOAT_PRECISION = 6;
 
+const DEBUG_STRESS_GC = true;
+const DEBUG_LOG_GC = true;
+
 pub const Type = enum {
     number,
     boolean,
@@ -51,6 +54,29 @@ pub const Object = struct {
 
     pub fn toZigString(self: *Self) []u8 {
         return self.toString().chars;
+    }
+
+    pub fn deinit(self: *Self, allocator: *Allocator) void {
+        std.log.debug("0x{X} free {a}", .{ @ptrToInt(self), self.typ });
+        switch (self.typ) {
+            .string => {
+                const s = self.toString();
+                allocator.free(s.chars);
+                allocator.destroy(s);
+            },
+            .function => {
+                const f = self.toFunction();
+                f.chunk.deinit();
+                allocator.destroy(f);
+            },
+            .native => allocator.destroy(self.toNative()),
+            .closure => {
+                const closure = self.toClosure();
+                closure.upvalues.deinit();
+                allocator.destroy(closure);
+            },
+            .upvalue => allocator.destroy(self.toUpvalue()),
+        }
     }
 };
 
@@ -103,6 +129,39 @@ pub const ObjectAllocator = struct {
         };
     }
 
+    fn create(self: *Self, comptime T: type) Allocator.Error!*T {
+        if (DEBUG_STRESS_GC) {
+            self.collectGarbage();
+        }
+        const res = try self.allocator.create(T);
+        if (DEBUG_LOG_GC) {
+            std.log.debug("0x{X} alloc {} for {s}", .{ @ptrToInt(res), @sizeOf(T), @typeName(T) });
+        }
+        return res;
+    }
+
+    fn alloc(self: *Self, comptime T: type, count: usize) Allocator.Error![]T {
+        if (DEBUG_STRESS_GC) {
+            self.collectGarbage();
+        }
+        const res = try self.allocator.alloc(T, count);
+        if (DEBUG_LOG_GC) {
+            std.log.debug("0x{X} alloc {} for {s}", .{ @ptrToInt(res.ptr), @sizeOf(T) * count, @typeName(T) });
+        }
+        return res;
+    }
+
+    fn dupe(self: *Self, comptime T: type, v: []const T) Allocator.Error![]T {
+        if (DEBUG_STRESS_GC) {
+            self.collectGarbage();
+        }
+        const res = try self.allocator.dupe(T, v);
+        if (DEBUG_LOG_GC) {
+            std.log.debug("0x{X} alloc {} for {s}", .{ @ptrToInt(res.ptr), @sizeOf(T), @typeName(T) });
+        }
+        return res;
+    }
+
     fn addObject(self: *Self, obj: *Object) void {
         if (self.obj) |old| {
             obj.next = old;
@@ -119,7 +178,7 @@ pub const ObjectAllocator = struct {
             return &e.key.?.base;
         }
 
-        var obj = try self.allocator.create(String);
+        var obj = try self.create(String);
         obj.base.next = null;
         obj.base.typ = .string;
         obj.chars = chars;
@@ -132,19 +191,19 @@ pub const ObjectAllocator = struct {
     }
 
     pub fn concatenateStrings(self: *Self, a: []const u8, b: []const u8) !*Object {
-        const s = try self.allocator.alloc(u8, a.len + b.len);
+        const s = try self.alloc(u8, a.len + b.len);
         std.mem.copy(u8, s[0 .. a.len + 1], a);
         std.mem.copy(u8, s[a.len..], b);
         return self.takeString(s);
     }
 
     pub fn allocString(self: *Self, chars: []const u8) !*Object {
-        const s = try self.allocator.dupe(u8, chars);
+        const s = try self.dupe(u8, chars);
         return self.takeString(s);
     }
 
     pub fn newFunction(self: *Self) !*Function {
-        var f = try self.allocator.create(Function);
+        var f = try self.create(Function);
         f.base.next = null;
         f.base.typ = .function;
         f.arity = 0;
@@ -156,7 +215,7 @@ pub const ObjectAllocator = struct {
     }
 
     pub fn newNative(self: *Self, func: NativeFn) !*Native {
-        var n = try self.allocator.create(Native);
+        var n = try self.create(Native);
         n.base.next = null;
         n.base.typ = .native;
         n.function = func;
@@ -165,7 +224,7 @@ pub const ObjectAllocator = struct {
     }
 
     pub fn newClosure(self: *Self, func: *Function) !*Closure {
-        var c = try self.allocator.create(Closure);
+        var c = try self.create(Closure);
         c.base.next = null;
         c.base.typ = .closure;
         c.function = func;
@@ -175,7 +234,7 @@ pub const ObjectAllocator = struct {
     }
 
     pub fn newUpvalue(self: *Self, value: *Value) !*Upvalue {
-        var u = try self.allocator.create(Upvalue);
+        var u = try self.create(Upvalue);
         u.base.next = null;
         u.base.typ = .upvalue;
         u.location = value;
@@ -185,29 +244,22 @@ pub const ObjectAllocator = struct {
         return u;
     }
 
+    fn collectGarbage(self: *Self) void {
+        _ = self;
+        if (DEBUG_LOG_GC) {
+            std.log.debug("-- gc begin", .{});
+        }
+
+        if (DEBUG_LOG_GC) {
+            std.log.debug("-- gc end", .{});
+        }
+    }
+
     pub fn deinit(self: *Self) void {
         var obj = self.obj;
         while (obj) |o| {
             const next = o.next;
-            switch (o.typ) {
-                .string => {
-                    const s = o.toString();
-                    self.allocator.free(s.chars);
-                    self.allocator.destroy(s);
-                },
-                .function => {
-                    const f = o.toFunction();
-                    f.chunk.deinit();
-                    self.allocator.destroy(f);
-                },
-                .native => self.allocator.destroy(o.toNative()),
-                .closure => {
-                    const closure = o.toClosure();
-                    closure.upvalues.deinit();
-                    self.allocator.destroy(closure);
-                },
-                .upvalue => self.allocator.destroy(o.toUpvalue()),
-            }
+            o.deinit(self.allocator);
             obj = next;
         }
         self.obj = null;
@@ -267,4 +319,3 @@ pub const Value = union(Type) {
         return self.toString().chars;
     }
 };
-
