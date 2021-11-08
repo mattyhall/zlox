@@ -76,11 +76,13 @@ pub const Chunk = struct {
         };
     }
 
-    pub fn addConstant(self: *Self, val: Value) !u8 {
+    pub fn addConstant(self: *Self, stack: *ds.Stack, val: Value) !u8 {
         if (self.values.count == 256)
             return error.TooManyConstants;
 
+        stack.push(val);
         try self.values.append(val);
+        _ = stack.pop();
         return @intCast(u8, self.values.count - 1);
     }
 
@@ -327,9 +329,15 @@ pub const Vm = struct {
 
     fn runBinaryOp(self: *Self, op: OpCode) Error!void {
         if (op == .add and self.stack.peek(1).isString() and self.stack.peek(0).isString()) {
-            const b = self.stack.pop().toZigString();
-            const a = self.stack.pop().toZigString();
-            self.stack.push(.{ .object = try self.allocator.concatenateStrings(a, b) });
+            const b = self.stack.peek(0).toZigString();
+            const a = self.stack.peek(1).toZigString();
+
+            const res = try self.allocator.concatenateStrings(a, b);
+
+            _ = self.stack.pop();
+            _ = self.stack.pop();
+
+            self.stack.push(.{ .object = res });
             return;
         }
 
@@ -593,15 +601,14 @@ pub const Vm = struct {
                     const closure = try self.allocator.newClosure(func.object.toFunction());
                     self.stack.push(.{ .object = &closure.base });
 
-                    try closure.upvalues.reserve(closure.function.upvalue_count);
                     var i: usize = 0;
                     while (i < closure.function.upvalue_count) : (i += 1) {
                         const is_local = self.readByte(frame);
                         const s_index = self.readByte(frame);
                         if (is_local == 1) {
-                            closure.upvalues.data[i] = try self.captureUpvalue(&frame.slots[s_index]);
+                            closure.upvalues.append(try self.captureUpvalue(&frame.slots[s_index])) catch unreachable;
                         } else {
-                            closure.upvalues.data[i] = frame.closure.upvalues.data[s_index];
+                            closure.upvalues.append(frame.closure.upvalues.data[s_index]) catch unreachable;
                         }
                     }
                 },
@@ -625,11 +632,14 @@ pub const Vm = struct {
     pub fn interpret(self: *Self, function: *memory.Function) Error!Value {
         self.stack.reset();
 
+        self.stack.push(.{ .object = &function.base });
+
+        self.allocator.vm = self;
+
         try self.defineNative("clock", clockNative);
         timer = try std.time.Timer.start();
 
         const closure = try self.allocator.newClosure(function);
-        self.stack.push(.{ .object = &function.base });
         _ = self.stack.pop();
         self.stack.push(.{ .object = &closure.base });
 

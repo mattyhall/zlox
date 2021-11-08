@@ -15,6 +15,9 @@ fn failsExpr(allocator: *memory.ObjectAllocator, comptime src: []const u8) !void
 }
 
 fn run(allocator: *memory.ObjectAllocator, src: []const u8) Value {
+    allocator.deinit();
+    allocator.* = memory.ObjectAllocator.init(std.testing.allocator) catch unreachable;
+
     var parser = Parser.init(allocator, src, .script) catch unreachable;
     var func = (parser.compile() catch unreachable) orelse unreachable;
 
@@ -26,6 +29,9 @@ fn run(allocator: *memory.ObjectAllocator, src: []const u8) Value {
 }
 
 fn fails(allocator: *memory.ObjectAllocator, src: []const u8) !void {
+    allocator.deinit();
+    allocator.* = memory.ObjectAllocator.init(std.testing.allocator) catch unreachable;
+
     var chunk = vm.Chunk.init(std.testing.allocator);
     defer chunk.deinit();
 

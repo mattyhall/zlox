@@ -1,6 +1,7 @@
 const std = @import("std");
 const ds = @import("ds.zig");
 const vm = @import("vm.zig");
+const compiler = @import("compiler.zig");
 
 const Allocator = std.mem.Allocator;
 const Table = ds.Table;
@@ -29,6 +30,7 @@ pub const ObjectType = enum {
 pub const Object = struct {
     typ: ObjectType,
     next: ?*Object,
+    marked: bool,
 
     const Self = @This();
 
@@ -57,7 +59,9 @@ pub const Object = struct {
     }
 
     pub fn deinit(self: *Self, allocator: *Allocator) void {
-        std.log.debug("0x{X} free {a}", .{ @ptrToInt(self), self.typ });
+        if (DEBUG_LOG_GC) {
+            std.log.debug("0x{X} free {a}", .{ @ptrToInt(self), self.typ });
+        }
         switch (self.typ) {
             .string => {
                 const s = self.toString();
@@ -118,6 +122,9 @@ pub const ObjectAllocator = struct {
     allocator: *Allocator,
     string_interner: Table,
     obj: ?*Object,
+    vm: ?*vm.Vm,
+    compiler: ?*compiler.Parser,
+    grey_stack: DynamicArray(*Object),
 
     const Self = @This();
 
@@ -126,6 +133,9 @@ pub const ObjectAllocator = struct {
             .allocator = allocator,
             .obj = null,
             .string_interner = try Table.init(allocator),
+            .vm = null,
+            .compiler = null,
+            .grey_stack = DynamicArray(*Object).init(allocator),
         };
     }
 
@@ -181,12 +191,26 @@ pub const ObjectAllocator = struct {
         var obj = try self.create(String);
         obj.base.next = null;
         obj.base.typ = .string;
+        obj.base.marked = false;
         obj.chars = chars;
         // TODO: this function hashes twice, once in the string interner and
         // once below. We should only do it once if possible
         obj.hash = ds.hashBytes(chars);
+
         self.addObject(&obj.base);
+
+        if (self.compiler != null or self.vm != null) {
+            var stack = if (self.compiler != null) &self.compiler.?.tmp_stack else &self.vm.?.stack;
+            stack.push(.{ .object = &obj.base });
+        }
+
         _ = try self.string_interner.insert(obj, .nil);
+
+        if (self.compiler != null or self.vm != null) {
+            var stack = if (self.compiler != null) &self.compiler.?.tmp_stack else &self.vm.?.stack;
+            _ = stack.pop();
+        }
+
         return &obj.base;
     }
 
@@ -206,6 +230,7 @@ pub const ObjectAllocator = struct {
         var f = try self.create(Function);
         f.base.next = null;
         f.base.typ = .function;
+        f.base.marked = false;
         f.arity = 0;
         f.name = null;
         f.upvalue_count = 0;
@@ -218,6 +243,7 @@ pub const ObjectAllocator = struct {
         var n = try self.create(Native);
         n.base.next = null;
         n.base.typ = .native;
+        n.base.marked = false;
         n.function = func;
         self.addObject(&n.base);
         return n;
@@ -227,8 +253,10 @@ pub const ObjectAllocator = struct {
         var c = try self.create(Closure);
         c.base.next = null;
         c.base.typ = .closure;
+        c.base.marked = false;
         c.function = func;
         c.upvalues = DynamicArray(*Upvalue).init(self.allocator);
+        try c.upvalues.reserve(func.upvalue_count);
         self.addObject(&c.base);
         return c;
     }
@@ -237,6 +265,7 @@ pub const ObjectAllocator = struct {
         var u = try self.create(Upvalue);
         u.base.next = null;
         u.base.typ = .upvalue;
+        u.base.marked = false;
         u.location = value;
         u.next = null;
         u.closed = .nil;
@@ -245,13 +274,140 @@ pub const ObjectAllocator = struct {
     }
 
     fn collectGarbage(self: *Self) void {
-        _ = self;
         if (DEBUG_LOG_GC) {
             std.log.debug("-- gc begin", .{});
         }
 
+        self.markRoots();
+        self.traceReferences();
+        self.tableRemoveUnmarked(&self.string_interner);
+        self.sweep();
+
         if (DEBUG_LOG_GC) {
             std.log.debug("-- gc end", .{});
+        }
+    }
+
+    fn markRoots(self: *Self) void {
+        if (self.vm) |machine| {
+            var slot: [*]Value = &machine.stack.data;
+            while (@ptrToInt(slot) < @ptrToInt(machine.stack.top)) : (slot += 1) {
+                self.markValue(slot[0]);
+            }
+
+            var i: usize = 0;
+            while (i < machine.frame_count) : (i += 1) {
+                self.markObject(&machine.frames[i].closure.base);
+            }
+
+            self.markTable(&machine.globals);
+
+            var upval = machine.open_upvalues;
+            while (upval != null) : (upval = upval.?.next) {
+                self.markObject(&upval.?.base);
+            }
+        }
+
+        if (self.compiler) |c| {
+            var current: ?*compiler.Parser = c;
+            while (current) |curr| {
+                self.markObject(&curr.function.base);
+
+                var slot: [*]Value = &curr.tmp_stack.data;
+                while (@ptrToInt(slot) < @ptrToInt(curr.tmp_stack.top)) : (slot += 1) {
+                    self.markValue(slot[0]);
+                }
+
+                current = curr.enclosing;
+            }
+        }
+    }
+
+    fn markValue(self: *Self, v: Value) void {
+        if (v == .object) {
+            self.markObject(v.object);
+        }
+    }
+
+    fn markObject(self: *Self, obj: ?*Object) void {
+        const o = obj orelse return;
+        if (o.marked) return;
+
+        o.marked = true;
+        self.grey_stack.append(o) catch unreachable;
+        if (DEBUG_LOG_GC) {
+            std.log.debug("0x{X} mark", .{@ptrToInt(o)});
+        }
+    }
+
+    fn markTable(self: *Self, table: *ds.Table) void {
+        for (table.buckets) |*entry| {
+            const key = if (entry.key != null) &entry.key.?.base else null;
+            self.markObject(key);
+            self.markValue(entry.value);
+        }
+    }
+
+    fn traceReferences(self: *Self) void {
+        while (self.grey_stack.items().len > 0) {
+            const obj = self.grey_stack.pop_back();
+            self.blackenObject(obj);
+        }
+    }
+
+    fn blackenObject(self: *Self, obj: *Object) void {
+        if (DEBUG_LOG_GC) {
+            std.log.debug("0x{X} blacken", .{@ptrToInt(obj)});
+        }
+        switch (obj.typ) {
+            .string, .native => {},
+            .upvalue => self.markValue(obj.toUpvalue().closed),
+            .function => {
+                const f = obj.toFunction();
+                if (f.name) |n|
+                    self.markObject(&n.base);
+                const items = f.chunk.values.items();
+                for (items) |v| {
+                    self.markValue(v);
+                }
+            },
+            .closure => {
+                const c = obj.toClosure();
+                self.markObject(&c.function.base);
+                const items = c.upvalues.items();
+                for (items) |up| {
+                    self.markObject(&up.base);
+                }
+            },
+        }
+    }
+
+    fn tableRemoveUnmarked(self: *Self, table: *Table) void {
+        _ = self;
+        for (table.buckets) |*entry| {
+            if (entry.key != null and !entry.key.?.base.marked)
+                table.delete(entry.key.?);
+        }
+    }
+
+    fn sweep(self: *Self) void {
+        var previous: ?*Object = null;
+        var object = self.obj;
+        while (object) |o| {
+            if (o.marked) {
+                previous = o;
+                object = o.next;
+                o.marked = false;
+            } else {
+                const unreached = o;
+                object = o.next;
+                if (previous) |p| {
+                    p.next = object;
+                } else {
+                    self.obj = object;
+                }
+                unreached.deinit(self.allocator);
+            }
         }
     }
 
@@ -264,6 +420,7 @@ pub const ObjectAllocator = struct {
         }
         self.obj = null;
         self.string_interner.deinit();
+        self.grey_stack.deinit();
     }
 };
 

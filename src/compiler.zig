@@ -83,6 +83,8 @@ pub const Parser = struct {
     function: *memory.Function,
     function_type: FunctionType,
 
+    tmp_stack: ds.Stack,
+
     enclosing: ?*Self,
 
     const Self = @This();
@@ -139,7 +141,7 @@ pub const Parser = struct {
     // zig fmt: on
 
     pub fn init(allocator: *memory.ObjectAllocator, src: []const u8, function_type: FunctionType) !Self {
-        var self = .{
+        var self: Self = .{
             .allocator = allocator,
             .scanner = scan.Scanner.init(src),
             .previous = undefined,
@@ -147,11 +149,15 @@ pub const Parser = struct {
             .had_error = false,
             .panic_mode = false,
             .locals = Locals.init(),
-            .function = try allocator.newFunction(),
+            .function = undefined,
             .function_type = function_type,
             .enclosing = null,
             .upvalues = undefined,
+            .tmp_stack = undefined,
         };
+
+        self.tmp_stack.reset();
+        self.function = try self.allocator.newFunction();
 
         var local = &self.locals.locals[0];
         local.depth = 0;
@@ -171,14 +177,21 @@ pub const Parser = struct {
             .had_error = false,
             .panic_mode = false,
             .locals = Locals.init(),
-            .function = try other.allocator.newFunction(),
+            .function = undefined,
             .function_type = function_type,
             .enclosing = other,
             .upvalues = undefined,
+            .tmp_stack = undefined,
         };
+
+        self.tmp_stack.reset();
+        self.function = try self.allocator.newFunction();
+
+        self.allocator.compiler = &self;
 
         if (self.function_type != .script)
             self.function.name = (try self.allocator.allocString(self.previous.loc orelse "")).toString();
+
         var local = &self.locals.locals[0];
         local.depth = 0;
         local.name.loc = "";
@@ -281,18 +294,18 @@ pub const Parser = struct {
         _ = can_assign;
         const loc = self.previous.loc orelse unreachable;
         const obj = try self.allocator.allocString(loc[1 .. loc.len - 1]);
-        try self.emit(&.{ @enumToInt(OpCode.constant), try self.currentChunk().*.addConstant(.{ .object = obj }) });
+        try self.emit(&.{ @enumToInt(OpCode.constant), try self.currentChunk().*.addConstant(&self.tmp_stack, .{ .object = obj }) });
     }
 
     fn number(self: *Self, can_assign: bool) !void {
         _ = can_assign;
         const num = try std.fmt.parseFloat(f32, self.previous.loc orelse unreachable);
-        try self.emit(&.{ @enumToInt(OpCode.constant), try self.currentChunk().*.addConstant(.{ .number = num }) });
+        try self.emit(&.{ @enumToInt(OpCode.constant), try self.currentChunk().*.addConstant(&self.tmp_stack, .{ .number = num }) });
     }
 
     fn identifierConstant(self: *Self, token: *const Token) !u8 {
         const obj = try self.allocator.allocString(token.loc.?);
-        return try self.currentChunk().*.addConstant(.{ .object = obj });
+        return try self.currentChunk().*.addConstant(&self.tmp_stack, .{ .object = obj });
     }
 
     fn resolveLocal(self: *Self, name: *const Token) !?u8 {
@@ -680,6 +693,7 @@ pub const Parser = struct {
 
     fn func(self: *Self, typ: FunctionType) !void {
         var compiler = try Self.inherit(self, typ);
+        self.allocator.compiler = &compiler;
         // defer compiler.deinit();
 
         compiler.beginScope();
@@ -703,13 +717,14 @@ pub const Parser = struct {
         try compiler.block();
 
         const f = (try compiler.end()) orelse unreachable;
-        try self.emit(&.{ @enumToInt(OpCode.closure), try self.currentChunk().addConstant(.{ .object = &f.base }) });
+        try self.emit(&.{ @enumToInt(OpCode.closure), try self.currentChunk().addConstant(&self.tmp_stack, .{ .object = &f.base }) });
 
         var i: usize = 0;
         while (i < f.upvalue_count) : (i += 1) {
             try self.emit(&.{ @boolToInt(compiler.upvalues[i].is_local), compiler.upvalues[i].index });
         }
 
+        self.allocator.compiler = self;
         self.scanner = compiler.scanner;
         self.previous = compiler.previous;
         self.current = compiler.current;
@@ -755,10 +770,13 @@ pub const Parser = struct {
     }
 
     pub fn compile(self: *Self) !?*memory.Function {
+        self.allocator.compiler = self;
         try self.advance();
         while (!(try self.match(.eof))) {
             try self.declaration();
         }
+
+        self.allocator.compiler = self.enclosing;
 
         return self.end();
     }

@@ -79,6 +79,11 @@ pub fn DynamicArray(comptime T: type) type {
             self.count += 1;
         }
 
+        pub fn pop_back(self: *Self) T {
+            self.count -= 1;
+            return self.data[self.count];
+        }
+
         pub fn deinit(self: *Self) void {
             self.allocator.free(self.slice());
         }
@@ -268,47 +273,3 @@ pub const Table = struct {
         self.allocator.free(self.buckets);
     }
 };
-
-test "table" {
-    var object_allocator = try memory.ObjectAllocator.init(std.testing.allocator);
-    defer object_allocator.deinit();
-    var table = try Table.init(std.testing.allocator);
-    defer table.deinit();
-
-    var i: usize = 0;
-    while (i < 10) : (i += 1) {
-        const s = try std.fmt.allocPrint(std.testing.allocator, "{}", .{i});
-        const o = try object_allocator.takeString(s);
-        _ = try table.insert(o.toString(), .{ .number = @intToFloat(f32, i) });
-    }
-
-    i = 0;
-
-    while (i < 10) : (i += 1) {
-        const s = try std.fmt.allocPrint(std.testing.allocator, "{}", .{i});
-        const o = try object_allocator.takeString(s);
-        const e = table.find(o.toString());
-        try std.testing.expect(e != null);
-        try std.testing.expectEqual(e.?.value, .{ .number = @intToFloat(f32, i) });
-    }
-
-    i = 0;
-    while (i < 10) : (i += 2) {
-        const s = try std.fmt.allocPrint(std.testing.allocator, "{}", .{i});
-        const o = try object_allocator.takeString(s);
-        table.delete(o.toString());
-    }
-
-    i = 0;
-    while (i < 10) : (i += 1) {
-        const s = try std.fmt.allocPrint(std.testing.allocator, "{}", .{i});
-        const o = try object_allocator.takeString(s);
-        const e = table.find(o.toString());
-        if (i % 2 == 0) {
-            try std.testing.expectEqual(e, null);
-        } else {
-            try std.testing.expect(e != null);
-            try std.testing.expectEqual(e.?.value, .{ .number = @intToFloat(f32, i) });
-        }
-    }
-}

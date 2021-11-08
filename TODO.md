@@ -5,6 +5,7 @@
 * Change object .toFOO functions to be generic
 * Use slices for native function arguments
 * Define arity of native functions (superseeds the above?)
+* Use union for objects
  
 # Optimisation
 * Add a two byte instruction for loading a number 0..255
