@@ -2,17 +2,19 @@ const std = @import("std");
 const vm = @import("vm.zig");
 const scan = @import("scanner.zig");
 const ds = @import("ds.zig");
+const memory = @import("memory.zig");
+const Value = memory.Value;
 const Parser = @import("compiler.zig").Parser;
 
-fn runExpr(allocator: *ds.ObjectAllocator, comptime src: []const u8) ds.Value {
+fn runExpr(allocator: *memory.ObjectAllocator, comptime src: []const u8) Value {
     return run(allocator, "return " ++ src ++ ";");
 }
 
-fn failsExpr(allocator: *ds.ObjectAllocator, comptime src: []const u8) !void {
+fn failsExpr(allocator: *memory.ObjectAllocator, comptime src: []const u8) !void {
     return fails(allocator, "return " ++ src ++ ";");
 }
 
-fn run(allocator: *ds.ObjectAllocator, src: []const u8) ds.Value {
+fn run(allocator: *memory.ObjectAllocator, src: []const u8) Value {
     var parser = Parser.init(allocator, src, .script) catch unreachable;
     var func = (parser.compile() catch unreachable) orelse unreachable;
 
@@ -23,7 +25,7 @@ fn run(allocator: *ds.ObjectAllocator, src: []const u8) ds.Value {
     return value;
 }
 
-fn fails(allocator: *ds.ObjectAllocator, src: []const u8) !void {
+fn fails(allocator: *memory.ObjectAllocator, src: []const u8) !void {
     var chunk = vm.Chunk.init(std.testing.allocator);
     defer chunk.deinit();
 
@@ -38,25 +40,25 @@ fn fails(allocator: *ds.ObjectAllocator, src: []const u8) !void {
 }
 
 test "literals" {
-    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    var alloc = try memory.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
-    try std.testing.expectEqual(ds.Value{ .number = -2 }, runExpr(&alloc, "-2"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "true"));
-    try std.testing.expectEqual(ds.Value{ .boolean = false }, runExpr(&alloc, "false"));
-    try std.testing.expectEqual(ds.Type.nil, @as(ds.Type, runExpr(&alloc, "nil")));
+    try std.testing.expectEqual(Value{ .number = -2 }, runExpr(&alloc, "-2"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "true"));
+    try std.testing.expectEqual(Value{ .boolean = false }, runExpr(&alloc, "false"));
+    try std.testing.expectEqual(memory.Type.nil, @as(memory.Type, runExpr(&alloc, "nil")));
 
     try std.testing.expectEqualStrings("HELLO", runExpr(&alloc, "\"HELLO\"").toZigString());
 }
 test "sums" {
-    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    var alloc = try memory.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
     // Numbers
-    try std.testing.expectEqual(ds.Value{ .number = 10.0 }, runExpr(&alloc, "3 + 7"));
-    try std.testing.expectEqual(ds.Value{ .number = -4.0 }, runExpr(&alloc, "3 - 7"));
-    try std.testing.expectEqual(ds.Value{ .number = 9.0 }, runExpr(&alloc, "3 * (1+2)"));
-    try std.testing.expectEqual(ds.Value{ .number = 8.0 }, runExpr(&alloc, "-2 + 7 + 3"));
-    try std.testing.expectEqual(ds.Value{ .number = 0.0 }, runExpr(&alloc, "8 + 12 * -2 / 3")); //
+    try std.testing.expectEqual(Value{ .number = 10.0 }, runExpr(&alloc, "3 + 7"));
+    try std.testing.expectEqual(Value{ .number = -4.0 }, runExpr(&alloc, "3 - 7"));
+    try std.testing.expectEqual(Value{ .number = 9.0 }, runExpr(&alloc, "3 * (1+2)"));
+    try std.testing.expectEqual(Value{ .number = 8.0 }, runExpr(&alloc, "-2 + 7 + 3"));
+    try std.testing.expectEqual(Value{ .number = 0.0 }, runExpr(&alloc, "8 + 12 * -2 / 3")); //
     try failsExpr(&alloc, "false + false");
     try failsExpr(&alloc, "true * true");
     try failsExpr(&alloc, "nil - nil");
@@ -68,40 +70,40 @@ test "sums" {
 }
 
 test "boolean logic" {
-    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    var alloc = try memory.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
     // Not
-    try std.testing.expectEqual(ds.Value{ .boolean = false }, runExpr(&alloc, "!1"));
-    try std.testing.expectEqual(ds.Value{ .boolean = false }, runExpr(&alloc, "!-1"));
-    try std.testing.expectEqual(ds.Value{ .boolean = false }, runExpr(&alloc, "!42.0"));
-    try std.testing.expectEqual(ds.Value{ .boolean = false }, runExpr(&alloc, "!true"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "!false"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "!nil"));
+    try std.testing.expectEqual(Value{ .boolean = false }, runExpr(&alloc, "!1"));
+    try std.testing.expectEqual(Value{ .boolean = false }, runExpr(&alloc, "!-1"));
+    try std.testing.expectEqual(Value{ .boolean = false }, runExpr(&alloc, "!42.0"));
+    try std.testing.expectEqual(Value{ .boolean = false }, runExpr(&alloc, "!true"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "!false"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "!nil"));
 
     // (In)Equality
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "1 == 1"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "-1 == -1"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "1.123 == 1.123"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "true == true"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "false == false"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "!false == !false"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "!true == !true"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "nil == nil"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "\"hi\" == \"hi\""));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "1 != 5"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "1.1 != 1.2"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "true != false"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "!true != !false"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "\"hi\" != \"hello\""));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "1 == 1"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "-1 == -1"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "1.123 == 1.123"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "true == true"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "false == false"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "!false == !false"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "!true == !true"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "nil == nil"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "\"hi\" == \"hi\""));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "1 != 5"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "1.1 != 1.2"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "true != false"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "!true != !false"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "\"hi\" != \"hello\""));
 
     // Gt/lt
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "1.23 < 2.23"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "1.23 <= 2.23"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, runExpr(&alloc, "1 <= 2"));
-    try std.testing.expectEqual(ds.Value{ .boolean = false }, runExpr(&alloc, "1.23 > 2.23"));
-    try std.testing.expectEqual(ds.Value{ .boolean = false }, runExpr(&alloc, "1.23 >= 2.23"));
-    try std.testing.expectEqual(ds.Value{ .boolean = false }, runExpr(&alloc, "1 >= 2"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "1.23 < 2.23"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "1.23 <= 2.23"));
+    try std.testing.expectEqual(Value{ .boolean = true }, runExpr(&alloc, "1 <= 2"));
+    try std.testing.expectEqual(Value{ .boolean = false }, runExpr(&alloc, "1.23 > 2.23"));
+    try std.testing.expectEqual(Value{ .boolean = false }, runExpr(&alloc, "1.23 >= 2.23"));
+    try std.testing.expectEqual(Value{ .boolean = false }, runExpr(&alloc, "1 >= 2"));
 
     // Errors
     try failsExpr(&alloc, "1 > false");
@@ -109,7 +111,7 @@ test "boolean logic" {
 }
 
 test "basic statements" {
-    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    var alloc = try memory.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
     _ = run(&alloc, "1;");
@@ -118,14 +120,14 @@ test "basic statements" {
 }
 
 test "global assignment" {
-    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    var alloc = try memory.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
-    try std.testing.expectEqual(ds.Type.nil, run(&alloc, "var a; return a;"));
-    try std.testing.expectEqual(ds.Value{ .number = 10.0 }, run(&alloc, "var a = 10; return a;"));
-    try std.testing.expectEqual(ds.Value{ .number = 22.0 }, run(&alloc, "var a = 10 * 2 + 7 - 5; return a;"));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, run(&alloc, "var a = true; return a;"));
-    try std.testing.expectEqual(ds.Value{ .number = 0.0 }, run(&alloc, "var a = 10; a = 0; return a;"));
+    try std.testing.expectEqual(memory.Type.nil, run(&alloc, "var a; return a;"));
+    try std.testing.expectEqual(Value{ .number = 10.0 }, run(&alloc, "var a = 10; return a;"));
+    try std.testing.expectEqual(Value{ .number = 22.0 }, run(&alloc, "var a = 10 * 2 + 7 - 5; return a;"));
+    try std.testing.expectEqual(Value{ .boolean = true }, run(&alloc, "var a = true; return a;"));
+    try std.testing.expectEqual(Value{ .number = 0.0 }, run(&alloc, "var a = 10; a = 0; return a;"));
     try std.testing.expectEqualStrings("hi", run(&alloc, "var a = \"hi\"; return a;").toZigString());
     try std.testing.expectEqualStrings("hello, world", run(&alloc, "var a = \"hello\"; a = a + \", world\"; return a;").toZigString());
 
@@ -134,12 +136,12 @@ test "global assignment" {
 }
 
 test "local assignment" {
-    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    var alloc = try memory.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
-    try std.testing.expectEqual(ds.Type.nil, run(&alloc, "{ var a; return a; }"));
-    try std.testing.expectEqual(ds.Value{ .number = 0.0 }, run(&alloc, "{ var a = true; a = 0; return a; }"));
-    try std.testing.expectEqual(ds.Value{ .number = 0.0 }, run(&alloc,
+    try std.testing.expectEqual(memory.Type.nil, run(&alloc, "{ var a; return a; }"));
+    try std.testing.expectEqual(Value{ .number = 0.0 }, run(&alloc, "{ var a = true; a = 0; return a; }"));
+    try std.testing.expectEqual(Value{ .number = 0.0 }, run(&alloc,
         \\ {
         \\   var a = true;
         \\   {
@@ -148,7 +150,7 @@ test "local assignment" {
         \\   }
         \\ }
     ));
-    try std.testing.expectEqual(ds.Value{ .boolean = true }, run(&alloc,
+    try std.testing.expectEqual(Value{ .boolean = true }, run(&alloc,
         \\ {
         \\   var a = true;
         \\   {
@@ -188,23 +190,23 @@ test "local assignment" {
     );
 }
 test "ifs" {
-    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    var alloc = try memory.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
-    try std.testing.expectEqual(ds.Value{ .number = 1.0 }, run(&alloc,
+    try std.testing.expectEqual(Value{ .number = 1.0 }, run(&alloc,
         \\ if (false) return 0.0;
         \\ return 1.0;
     ));
-    try std.testing.expectEqual(ds.Value{ .number = 0.0 }, run(&alloc,
+    try std.testing.expectEqual(Value{ .number = 0.0 }, run(&alloc,
         \\ if (true) return 0.0;
         \\ return 1.0;
     ));
 
-    try std.testing.expectEqual(ds.Value{ .number = 0.0 }, run(&alloc,
+    try std.testing.expectEqual(Value{ .number = 0.0 }, run(&alloc,
         \\ if (true) return 0.0;
         \\ else return 1.0;
     ));
-    try std.testing.expectEqual(ds.Value{ .number = 1.0 }, run(&alloc,
+    try std.testing.expectEqual(Value{ .number = 1.0 }, run(&alloc,
         \\ if (false) return 0.0;
         \\ else return 1.0;
     ));
@@ -215,28 +217,28 @@ test "ifs" {
         \\ else return 2.0;
     ;
 
-    try std.testing.expectEqual(ds.Value{ .number = 0.0 }, run(&alloc, "var a = 0.0;" ++ body));
-    try std.testing.expectEqual(ds.Value{ .number = 1.0 }, run(&alloc, "var a = 1.0;" ++ body));
-    try std.testing.expectEqual(ds.Value{ .number = 2.0 }, run(&alloc, "var a = 2.0;" ++ body));
+    try std.testing.expectEqual(Value{ .number = 0.0 }, run(&alloc, "var a = 0.0;" ++ body));
+    try std.testing.expectEqual(Value{ .number = 1.0 }, run(&alloc, "var a = 1.0;" ++ body));
+    try std.testing.expectEqual(Value{ .number = 2.0 }, run(&alloc, "var a = 2.0;" ++ body));
 }
 
 test "while" {
-    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    var alloc = try memory.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
-    try std.testing.expectEqual(ds.Value{ .number = 10.0 }, run(&alloc,
+    try std.testing.expectEqual(Value{ .number = 10.0 }, run(&alloc,
         \\ var a = 10.0;
         \\ while (a < 10) a = a + 1;
         \\ return a;
     ));
 
-    try std.testing.expectEqual(ds.Value{ .number = 1.0 }, run(&alloc,
+    try std.testing.expectEqual(Value{ .number = 1.0 }, run(&alloc,
         \\ var a = 1.0;
         \\ while (a < 1) a = a + 1;
         \\ return a;
     ));
 
-    try std.testing.expectEqual(ds.Value{ .number = 0.0 }, run(&alloc,
+    try std.testing.expectEqual(Value{ .number = 0.0 }, run(&alloc,
         \\ var a = 30.0;
         \\ while (a > 0) {
         \\   var b = 1;
@@ -247,10 +249,10 @@ test "while" {
 }
 
 test "for" {
-    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    var alloc = try memory.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
-    try std.testing.expectEqual(ds.Value{ .number = 55.0 }, run(&alloc,
+    try std.testing.expectEqual(Value{ .number = 55.0 }, run(&alloc,
         \\ var count = 0;
         \\ for (var i = 1; i <= 10; i = i + 1) {
         \\   count = count + i;
@@ -260,7 +262,7 @@ test "for" {
 }
 
 test "fun" {
-    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    var alloc = try memory.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
     _ = run(&alloc,
@@ -276,7 +278,7 @@ test "fun" {
         \\ }
         \\ return foo() + " world";
     ).toZigString());
-    try std.testing.expectEqual(ds.Value{ .number = 10.0 }, run(&alloc,
+    try std.testing.expectEqual(Value{ .number = 10.0 }, run(&alloc,
         \\ var x = 10;
         \\ fun foo() {
         \\   var y = 2;
@@ -284,7 +286,7 @@ test "fun" {
         \\ }
         \\ return foo() / 2;
     ));
-    try std.testing.expectEqual(ds.Value{ .number = 20.0 }, run(&alloc,
+    try std.testing.expectEqual(Value{ .number = 20.0 }, run(&alloc,
         \\ fun multiply(a, sf) {
         \\   return a * sf;
         \\ }
@@ -304,7 +306,7 @@ test "fun" {
 }
 
 test "closure" {
-    var alloc = try ds.ObjectAllocator.init(std.testing.allocator);
+    var alloc = try memory.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
     const range =
@@ -320,19 +322,19 @@ test "closure" {
         \\ }
     ;
 
-    try std.testing.expectEqual(ds.Value{ .number = 3.0 }, run(&alloc, range ++
+    try std.testing.expectEqual(Value{ .number = 3.0 }, run(&alloc, range ++
         \\ var gen = range(1, 10);
         \\ gen();
         \\ gen();
         \\ return gen();
     ));
-    try std.testing.expectEqual(ds.Type.nil, @as(ds.Type, run(&alloc, range ++
+    try std.testing.expectEqual(memory.Type.nil, @as(memory.Type, run(&alloc, range ++
         \\ var gen = range(1, 3);
         \\ gen();
         \\ gen();
         \\ return gen();
     )));
-    try std.testing.expectEqual(ds.Value{ .number = 6.0 }, run(&alloc, range ++
+    try std.testing.expectEqual(Value{ .number = 6.0 }, run(&alloc, range ++
         \\ var gen = range(1, 4);
         \\ var count = 0;
         \\ var i = 0;
@@ -342,7 +344,7 @@ test "closure" {
         \\ return count;
     ));
 
-    try std.testing.expectEqual(ds.Value { .number = 3.0 }, run(&alloc,
+    try std.testing.expectEqual(Value{ .number = 3.0 }, run(&alloc,
         \\ fun outer() {
         \\   var a = 1;
         \\   fun middle() {

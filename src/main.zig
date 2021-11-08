@@ -3,13 +3,14 @@ const vm = @import("vm.zig");
 const scan = @import("scanner.zig");
 const Parser = @import("compiler.zig").Parser;
 const ds = @import("ds.zig");
+const memory = @import("memory.zig");
 
 const Allocator = std.mem.Allocator;
 
 pub fn main() anyerror!void {
     const allocator = std.heap.c_allocator;
 
-    var obj_allocator = try ds.ObjectAllocator.init(allocator);
+    var obj_allocator = try memory.ObjectAllocator.init(allocator);
     defer obj_allocator.deinit();
 
     var table = try ds.Table.init(allocator);

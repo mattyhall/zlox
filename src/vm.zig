@@ -1,8 +1,9 @@
 const std = @import("std");
 const ds = @import("ds.zig");
+const memory = @import("memory.zig");
 
 const Allocator = std.mem.Allocator;
-const Value = ds.Value;
+const Value = memory.Value;
 
 const DEBUG_TRACE_EXECUTION = false;
 
@@ -47,12 +48,12 @@ const LineInfo = struct {
 };
 
 const CallFrame = struct {
-    closure: *ds.Closure,
+    closure: *memory.Closure,
 
     // Current ip of this function. If this function (a) calls another (b) then when b returns we'll reset the vm ip to a's.
     ip: [*]const u8,
 
-    slots: [*]ds.Value, // Pointer into the stack to the first slot the function can use
+    slots: [*]memory.Value, // Pointer into the stack to the first slot the function can use
 };
 
 pub const Chunk = struct {
@@ -275,7 +276,7 @@ pub const InterpretError = error{
 
 var timer: std.time.Timer = undefined;
 
-fn clockNative(arg_count: u8, args: [*]ds.Value) ds.Value {
+fn clockNative(arg_count: u8, args: [*]memory.Value) memory.Value {
     _ = arg_count;
     _ = args;
     const elapsed = timer.read();
@@ -283,7 +284,7 @@ fn clockNative(arg_count: u8, args: [*]ds.Value) ds.Value {
 }
 
 pub const Vm = struct {
-    allocator: *ds.ObjectAllocator,
+    allocator: *memory.ObjectAllocator,
     chunk: ?*const Chunk,
     stack: ds.Stack,
     globals: ds.Table,
@@ -291,13 +292,13 @@ pub const Vm = struct {
     frames: [ds.FRAMES_MAX]CallFrame,
     frame_count: usize,
 
-    open_upvalues: ?*ds.Upvalue,
+    open_upvalues: ?*memory.Upvalue,
 
     const Self = @This();
     // TODO: be cleverer
     pub const Error = anyerror; //if (DEBUG_TRACE_EXECUTION) anyerror else InterpretError;
 
-    pub fn init(allocator: *ds.ObjectAllocator) !Self {
+    pub fn init(allocator: *memory.ObjectAllocator) !Self {
         var self = Self{
             .allocator = allocator,
             .chunk = null,
@@ -354,12 +355,12 @@ pub const Vm = struct {
         if (op == .equal or op == .not_equal) {
             const b = self.stack.pop();
             const a = self.stack.pop();
-            if (@as(ds.Type, a) != @as(ds.Type, b)) {
+            if (@as(memory.Type, a) != @as(memory.Type, b)) {
                 self.stack.push(.{ .boolean = if (op == .equal) false else true });
                 return;
             }
             self.stack.push(.{
-                .boolean = switch (@as(ds.Type, a)) {
+                .boolean = switch (@as(memory.Type, a)) {
                     .nil => true,
                     .boolean => if (op == .equal) a.boolean == b.boolean else a.boolean != b.boolean,
                     .number => if (op == .equal) a.number == b.number else a.number != b.number,
@@ -390,7 +391,7 @@ pub const Vm = struct {
         self.stack.push(.{ .boolean = res });
     }
 
-    fn call(self: *Self, closure: *ds.Closure, arg_count: usize) !void {
+    fn call(self: *Self, closure: *memory.Closure, arg_count: usize) !void {
         if (arg_count != closure.function.arity) {
             try self.runtimeError("Expected {} arguments but got {}", .{ closure.function.arity, arg_count });
             return error.runtime_error;
@@ -402,7 +403,7 @@ pub const Vm = struct {
         frame.slots = self.stack.top - arg_count - 1;
     }
 
-    fn callValue(self: *Self, callee: ds.Value, arg_count: u8) !void {
+    fn callValue(self: *Self, callee: memory.Value, arg_count: u8) !void {
         if (callee == .object) {
             switch (callee.object.typ) {
                 .closure => {
@@ -423,8 +424,8 @@ pub const Vm = struct {
         return error.runtime_error;
     }
 
-    fn captureUpvalue(self: *Self, local: *Value) !*ds.Upvalue {
-        var prev_upvalue: ?*ds.Upvalue = null;
+    fn captureUpvalue(self: *Self, local: *Value) !*memory.Upvalue {
+        var prev_upvalue: ?*memory.Upvalue = null;
         var upvalue = self.open_upvalues;
         while (upvalue != null and @ptrToInt(upvalue.?.location) > @ptrToInt(local)) {
             prev_upvalue = upvalue;
@@ -453,7 +454,7 @@ pub const Vm = struct {
         }
     }
 
-    fn defineNative(self: *Self, name: []const u8, f: ds.NativeFn) !void {
+    fn defineNative(self: *Self, name: []const u8, f: memory.NativeFn) !void {
         self.stack.push(.{ .object = try self.allocator.allocString(name) });
         self.stack.push(.{ .object = &(try self.allocator.newNative(f)).base });
 
@@ -621,7 +622,7 @@ pub const Vm = struct {
         }
     }
 
-    pub fn interpret(self: *Self, function: *ds.Function) Error!Value {
+    pub fn interpret(self: *Self, function: *memory.Function) Error!Value {
         self.stack.reset();
 
         try self.defineNative("clock", clockNative);

@@ -2,6 +2,7 @@ const std = @import("std");
 const vm = @import("vm.zig");
 const scan = @import("scanner.zig");
 const ds = @import("ds.zig");
+const memory = @import("memory.zig");
 
 const Chunk = vm.Chunk;
 const OpCode = vm.OpCode;
@@ -67,7 +68,7 @@ const Jmp = struct {
 pub const FunctionType = enum { function, script };
 
 pub const Parser = struct {
-    allocator: *ds.ObjectAllocator,
+    allocator: *memory.ObjectAllocator,
 
     current: Token,
     previous: Token,
@@ -79,7 +80,7 @@ pub const Parser = struct {
     locals: Locals,
     upvalues: [256]Upvalue,
 
-    function: *ds.Function,
+    function: *memory.Function,
     function_type: FunctionType,
 
     enclosing: ?*Self,
@@ -137,7 +138,7 @@ pub const Parser = struct {
     };
     // zig fmt: on
 
-    pub fn init(allocator: *ds.ObjectAllocator, src: []const u8, function_type: FunctionType) !Self {
+    pub fn init(allocator: *memory.ObjectAllocator, src: []const u8, function_type: FunctionType) !Self {
         var self = .{
             .allocator = allocator,
             .scanner = scan.Scanner.init(src),
@@ -343,7 +344,6 @@ pub const Parser = struct {
         if (try self.enclosing.?.resolveUpvalue(name)) |upval| {
             return try self.addUpvalue(upval, false);
         }
-
 
         return null;
     }
@@ -745,7 +745,7 @@ pub const Parser = struct {
         if (self.panic_mode) try self.synchronise();
     }
 
-    fn end(self: *Self) !?*ds.Function {
+    fn end(self: *Self) !?*memory.Function {
         if (self.had_error)
             return null;
 
@@ -754,7 +754,7 @@ pub const Parser = struct {
         return self.function;
     }
 
-    pub fn compile(self: *Self) !?*ds.Function {
+    pub fn compile(self: *Self) !?*memory.Function {
         try self.advance();
         while (!(try self.match(.eof))) {
             try self.declaration();
