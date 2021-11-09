@@ -9,8 +9,10 @@ const DynamicArray = ds.DynamicArray;
 
 pub const FLOAT_PRECISION = 6;
 
-const DEBUG_STRESS_GC = true;
+const DEBUG_STRESS_GC = false;
 const DEBUG_LOG_GC = true;
+
+const GC_HEAP_GROW_FACTOR: usize = 2;
 
 pub const Type = enum {
     number,
@@ -58,28 +60,37 @@ pub const Object = struct {
         return self.toString().chars;
     }
 
-    pub fn deinit(self: *Self, allocator: *Allocator) void {
+    pub fn deinit(self: *Self, allocator: *ObjectAllocator) void {
         if (DEBUG_LOG_GC) {
             std.log.debug("0x{X} free {a}", .{ @ptrToInt(self), self.typ });
         }
         switch (self.typ) {
             .string => {
                 const s = self.toString();
-                allocator.free(s.chars);
-                allocator.destroy(s);
+                allocator.bytes_allocated -= @sizeOf(String) + s.chars.len;
+                allocator.allocator.free(s.chars);
+                allocator.allocator.destroy(s);
             },
             .function => {
                 const f = self.toFunction();
                 f.chunk.deinit();
-                allocator.destroy(f);
+                allocator.bytes_allocated -= @sizeOf(Function);
+                allocator.allocator.destroy(f);
             },
-            .native => allocator.destroy(self.toNative()),
+            .native => {
+                allocator.allocator.destroy(self.toNative());
+                allocator.bytes_allocated -= @sizeOf(Native);
+            },
             .closure => {
                 const closure = self.toClosure();
                 closure.upvalues.deinit();
-                allocator.destroy(closure);
+                allocator.bytes_allocated -= @sizeOf(Closure);
+                allocator.allocator.destroy(closure);
             },
-            .upvalue => allocator.destroy(self.toUpvalue()),
+            .upvalue => {
+                allocator.bytes_allocated -= @sizeOf(Upvalue);
+                allocator.allocator.destroy(self.toUpvalue());
+            },
         }
     }
 };
@@ -125,6 +136,8 @@ pub const ObjectAllocator = struct {
     vm: ?*vm.Vm,
     compiler: ?*compiler.Parser,
     grey_stack: DynamicArray(*Object),
+    bytes_allocated: usize,
+    next_gc: usize,
 
     const Self = @This();
 
@@ -136,6 +149,8 @@ pub const ObjectAllocator = struct {
             .vm = null,
             .compiler = null,
             .grey_stack = DynamicArray(*Object).init(allocator),
+            .bytes_allocated = 0,
+            .next_gc = 1024 * 1024,
         };
     }
 
@@ -143,32 +158,46 @@ pub const ObjectAllocator = struct {
         if (DEBUG_STRESS_GC) {
             self.collectGarbage();
         }
+        if (self.bytes_allocated > self.next_gc)
+            self.collectGarbage();
+
         const res = try self.allocator.create(T);
-        if (DEBUG_LOG_GC) {
+        if (DEBUG_LOG_GC)
             std.log.debug("0x{X} alloc {} for {s}", .{ @ptrToInt(res), @sizeOf(T), @typeName(T) });
-        }
+
+        self.bytes_allocated += @sizeOf(T);
+
         return res;
     }
 
     fn alloc(self: *Self, comptime T: type, count: usize) Allocator.Error![]T {
-        if (DEBUG_STRESS_GC) {
+        if (DEBUG_STRESS_GC)
             self.collectGarbage();
-        }
+        if (self.bytes_allocated > self.next_gc)
+            self.collectGarbage();
+
         const res = try self.allocator.alloc(T, count);
-        if (DEBUG_LOG_GC) {
+        if (DEBUG_LOG_GC)
             std.log.debug("0x{X} alloc {} for {s}", .{ @ptrToInt(res.ptr), @sizeOf(T) * count, @typeName(T) });
-        }
+
+        self.bytes_allocated += @sizeOf(T) * count;
+
         return res;
     }
 
     fn dupe(self: *Self, comptime T: type, v: []const T) Allocator.Error![]T {
-        if (DEBUG_STRESS_GC) {
+        if (DEBUG_STRESS_GC)
             self.collectGarbage();
-        }
+        if (self.bytes_allocated > self.next_gc)
+            self.collectGarbage();
+
         const res = try self.allocator.dupe(T, v);
-        if (DEBUG_LOG_GC) {
-            std.log.debug("0x{X} alloc {} for {s}", .{ @ptrToInt(res.ptr), @sizeOf(T), @typeName(T) });
-        }
+
+        if (DEBUG_LOG_GC)
+            std.log.debug("0x{X} alloc {} for {s}", .{ @ptrToInt(res.ptr), @sizeOf(T) * v.len, @typeName(T) });
+
+        self.bytes_allocated += @sizeOf(T) * v.len;
+
         return res;
     }
 
@@ -282,6 +311,8 @@ pub const ObjectAllocator = struct {
         self.traceReferences();
         self.tableRemoveUnmarked(&self.string_interner);
         self.sweep();
+
+        self.next_gc = self.bytes_allocated * GC_HEAP_GROW_FACTOR;
 
         if (DEBUG_LOG_GC) {
             std.log.debug("-- gc end", .{});
@@ -406,7 +437,7 @@ pub const ObjectAllocator = struct {
                 } else {
                     self.obj = object;
                 }
-                unreached.deinit(self.allocator);
+                unreached.deinit(self);
             }
         }
     }
@@ -415,7 +446,7 @@ pub const ObjectAllocator = struct {
         var obj = self.obj;
         while (obj) |o| {
             const next = o.next;
-            o.deinit(self.allocator);
+            o.deinit(self);
             obj = next;
         }
         self.obj = null;
