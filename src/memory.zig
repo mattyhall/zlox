@@ -28,6 +28,7 @@ pub const ObjectType = enum {
     closure,
     upvalue,
     class,
+    instance,
 };
 
 pub const Object = struct {
@@ -65,6 +66,10 @@ pub const Object = struct {
         return @fieldParentPtr(Class, "base", self);
     }
 
+    pub fn toInstance(self: *Self) *Instance {
+        return @fieldParentPtr(Instance, "base", self);
+    }
+
     pub fn deinit(self: *Self, allocator: *ObjectAllocator) void {
         if (DEBUG_LOG_GC) {
             std.log.debug("0x{X} free {a}", .{ @ptrToInt(self), self.typ });
@@ -99,6 +104,11 @@ pub const Object = struct {
             .class => {
                 allocator.bytes_allocated -= @sizeOf(Class);
                 allocator.allocator.destroy(self.toClass());
+            },
+            .instance => {
+                allocator.bytes_allocated -= @sizeOf(Instance);
+                allocator.allocator.destroy(self.toInstance());
+                self.toInstance().fields.deinit();
             },
         }
     }
@@ -141,6 +151,12 @@ pub const Upvalue = struct {
 pub const Class = struct {
     base: Object,
     name: *String,
+};
+
+pub const Instance = struct {
+    base: Object,
+    class: *Class,
+    fields: Table,
 };
 
 pub const ObjectAllocator = struct {
@@ -326,6 +342,17 @@ pub const ObjectAllocator = struct {
         return c;
     }
 
+    pub fn newInstance(self: *Self, class: *Class) !*Instance {
+        const i = try self.create(Instance);
+        i.base.next = null;
+        i.base.typ = .instance;
+        i.base.marked = false;
+        i.class = class;
+        i.fields = try Table.init(self.allocator);
+        self.addObject(&i.base);
+        return i;
+    }
+
     fn collectGarbage(self: *Self) void {
         if (DEBUG_LOG_GC) {
             std.log.debug("-- gc begin", .{});
@@ -438,6 +465,11 @@ pub const ObjectAllocator = struct {
                 const c = obj.toClass();
                 self.markObject(&c.name.base);
             },
+            .instance => {
+                const i = obj.toInstance();
+                self.markObject(&i.class.base);
+                self.markTable(&i.fields);
+            },
         }
     }
 
@@ -509,6 +541,7 @@ pub const Value = union(Type) {
                 },
                 .upvalue => try writer.print("upvalue", .{}),
                 .class => try writer.print("<class {s}>", .{o.toClass().name.chars}),
+                .instance => try writer.print("{s} instance", .{o.toInstance().class.name.chars}),
             },
         }
     }

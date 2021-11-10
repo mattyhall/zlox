@@ -376,7 +376,9 @@ pub const Vm = struct {
                     .boolean => if (op == .equal) a.boolean == b.boolean else a.boolean != b.boolean,
                     .number => if (op == .equal) a.number == b.number else a.number != b.number,
                     .object => switch (a.object.typ) {
-                        .string => if (op == .equal) a.object == b.object else a.object != b.object,
+                        .string,
+                        .instance,
+                        => if (op == .equal) a.object == b.object else a.object != b.object,
                         .function => false, // TODO: fix
                         .native => false,
                         .closure => false,
@@ -427,6 +429,13 @@ pub const Vm = struct {
                     const res = f.function(arg_count, self.stack.top - arg_count);
                     self.stack.top -= arg_count + 1;
                     self.stack.push(res);
+                    return;
+                },
+                .class => {
+                    const class = callee.object.toClass();
+                    const instance = try self.allocator.newInstance(class);
+                    self.stack.top -= arg_count + 1;
+                    self.stack.push(.{ .object = &instance.base });
                     return;
                 },
                 else => {},
