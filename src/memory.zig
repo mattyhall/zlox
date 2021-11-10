@@ -27,6 +27,7 @@ pub const ObjectType = enum {
     native,
     closure,
     upvalue,
+    class,
 };
 
 pub const Object = struct {
@@ -60,6 +61,10 @@ pub const Object = struct {
         return self.toString().chars;
     }
 
+    pub fn toClass(self: *Self) *Class {
+        return @fieldParentPtr(Class, "base", self);
+    }
+
     pub fn deinit(self: *Self, allocator: *ObjectAllocator) void {
         if (DEBUG_LOG_GC) {
             std.log.debug("0x{X} free {a}", .{ @ptrToInt(self), self.typ });
@@ -90,6 +95,10 @@ pub const Object = struct {
             .upvalue => {
                 allocator.bytes_allocated -= @sizeOf(Upvalue);
                 allocator.allocator.destroy(self.toUpvalue());
+            },
+            .class => {
+                allocator.bytes_allocated -= @sizeOf(Class);
+                allocator.allocator.destroy(self.toClass());
             },
         }
     }
@@ -127,6 +136,11 @@ pub const Upvalue = struct {
     location: *Value,
     next: ?*Upvalue,
     closed: Value,
+};
+
+pub const Class = struct {
+    base: Object,
+    name: *String,
 };
 
 pub const ObjectAllocator = struct {
@@ -302,6 +316,16 @@ pub const ObjectAllocator = struct {
         return u;
     }
 
+    pub fn newClass(self: *Self, name: *String) !*Class {
+        const c = try self.create(Class);
+        c.base.next = null;
+        c.base.typ = .class;
+        c.base.marked = false;
+        c.name = name;
+        self.addObject(&c.base);
+        return c;
+    }
+
     fn collectGarbage(self: *Self) void {
         if (DEBUG_LOG_GC) {
             std.log.debug("-- gc begin", .{});
@@ -410,6 +434,10 @@ pub const ObjectAllocator = struct {
                     self.markObject(&up.base);
                 }
             },
+            .class => {
+                const c = obj.toClass();
+                self.markObject(&c.name.base);
+            },
         }
     }
 
@@ -480,6 +508,7 @@ pub const Value = union(Type) {
                     try writer.print("<fn {s}>", .{name});
                 },
                 .upvalue => try writer.print("upvalue", .{}),
+                .class => try writer.print("<class {s}>", .{o.toClass().name.chars}),
             },
         }
     }

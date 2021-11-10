@@ -737,6 +737,18 @@ pub const Parser = struct {
         try self.defineVariable(global);
     }
 
+    fn classDeclaration(self: *Self) !void {
+        try self.consume(.identifier, "Expect class name");
+        const name = try self.identifierConstant(&self.previous);
+        try self.declareVariable();
+
+        try self.emit(&.{ @enumToInt(OpCode.class), name });
+        try self.defineVariable(name);
+
+        try self.consume(.left_brace, "Expect '{' before class body");
+        try self.consume(.right_brace, "Expect '}' after class body");
+    }
+
     fn synchronise(self: *Self) !void {
         while (self.current.typ != .eof) {
             if (self.previous.typ == .semicolon) return;
@@ -753,6 +765,8 @@ pub const Parser = struct {
             try self.varDecl();
         } else if (try self.match(.fun)) {
             try self.funcDecl();
+        } else if (try self.match(.class)) {
+            try self.classDeclaration();
         } else {
             try self.statement();
         }

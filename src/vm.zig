@@ -40,6 +40,7 @@ pub const OpCode = enum(u8) {
     get_upvalue,
     set_upvalue,
     close_upvalue,
+    class,
 };
 
 const LineInfo = struct {
@@ -134,6 +135,7 @@ pub const Chunk = struct {
             .define_global => "DEFG",
             .get_global => "GETG",
             .set_global => "SETG",
+            .class => "CLASS",
             else => unreachable,
         };
         try stdout.print(" {s:<5} c{} (", .{ s, index });
@@ -210,6 +212,7 @@ pub const Chunk = struct {
             .define_global,
             .get_global,
             .set_global,
+            .class,
             => return self.disassembleConstantInstruction(stdout, offset, instruction),
             .get_local,
             .set_local,
@@ -378,6 +381,7 @@ pub const Vm = struct {
                         .native => false,
                         .closure => false,
                         .upvalue => unreachable,
+                        .class => false,
                     },
                 },
             });
@@ -623,6 +627,11 @@ pub const Vm = struct {
                 .close_upvalue => {
                     self.closeUpvalues(&(self.stack.top - 1)[0]);
                     _ = self.stack.pop();
+                },
+                .class => {
+                    const name = chunk.values.data[self.readByte(frame)];
+                    const class = try self.allocator.newClass(name.object.toString());
+                    self.stack.push(.{ .object = &class.base });
                 },
             }
             first = false;
