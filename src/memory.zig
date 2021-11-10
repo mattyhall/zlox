@@ -107,8 +107,8 @@ pub const Object = struct {
             },
             .instance => {
                 allocator.bytes_allocated -= @sizeOf(Instance);
-                allocator.allocator.destroy(self.toInstance());
                 self.toInstance().fields.deinit();
+                allocator.allocator.destroy(self.toInstance());
             },
         }
     }

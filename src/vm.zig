@@ -41,6 +41,8 @@ pub const OpCode = enum(u8) {
     set_upvalue,
     close_upvalue,
     class,
+    get_property,
+    set_property,
 };
 
 const LineInfo = struct {
@@ -136,6 +138,8 @@ pub const Chunk = struct {
             .get_global => "GETG",
             .set_global => "SETG",
             .class => "CLASS",
+            .get_property => "GETP",
+            .set_property => "SETP",
             else => unreachable,
         };
         try stdout.print(" {s:<5} c{} (", .{ s, index });
@@ -213,6 +217,8 @@ pub const Chunk = struct {
             .get_global,
             .set_global,
             .class,
+            .get_property,
+            .set_property,
             => return self.disassembleConstantInstruction(stdout, offset, instruction),
             .get_local,
             .set_local,
@@ -641,6 +647,31 @@ pub const Vm = struct {
                     const name = chunk.values.data[self.readByte(frame)];
                     const class = try self.allocator.newClass(name.object.toString());
                     self.stack.push(.{ .object = &class.base });
+                },
+                .get_property => {
+                    const peeked = self.stack.peek(0);
+                    if (peeked != .object or peeked.object.typ != .instance) {
+                        try self.runtimeError("Only instances have properties", .{});
+                        return error.runtime_error;
+                    }
+                    const instance = peeked.object.toInstance();
+                    const name = chunk.values.data[self.readByte(frame)].object.toString();
+
+                    if (instance.fields.find(name)) |e| {
+                        _ = self.stack.pop(); // instance
+                        self.stack.push(e.value);
+                    } else {
+                      try self.runtimeError("Undefined property '{s}'", .{name.chars});
+                      return error.runtime_error;
+                    }
+                },
+                .set_property => {
+                    const instance = self.stack.peek(1).object.toInstance();
+                    const name = chunk.values.data[self.readByte(frame)].object.toString();
+                    _ = try instance.fields.insert(name, self.stack.peek(0));
+                    const v = self.stack.pop();
+                    _ = self.stack.pop(); // Instance
+                    self.stack.push(v);
                 },
             }
             first = false;

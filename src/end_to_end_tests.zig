@@ -368,3 +368,17 @@ test "closure" {
         \\ return inner();
     ));
 }
+
+test "class fields" {
+    var alloc = try memory.ObjectAllocator.init(std.testing.allocator);
+    defer alloc.deinit();
+
+    try std.testing.expectEqual(Value{ .number = 42 }, run(&alloc,
+        \\ class A {}
+        \\ class B {}
+        \\ var a = A();
+        \\ a.b = B();
+        \\ a.b.c = 42;
+        \\ return a.b.c;
+    ));
+}

@@ -91,7 +91,7 @@ pub const Parser = struct {
 
     const ParseRule = struct {
         prefix: ?fn (self: *Self, can_assign: bool) anyerror!void,
-        infix: ?fn (self: *Self) anyerror!void,
+        infix: ?fn (self: *Self, can_assign: bool) anyerror!void,
         precedence: Precedence,
     };
 
@@ -107,7 +107,7 @@ pub const Parser = struct {
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //comma,
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //left_brace,
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //right_brace,
-        .{ .prefix = null,     .infix = null,   .precedence = .none },     //dot,
+        .{ .prefix = null,     .infix = dot,    .precedence = .call },     //dot,
         .{ .prefix = unary,    .infix = null,   .precedence = .none },     //bang,
         .{ .prefix = null,     .infix = binary, .precedence = .equality }, //bang_equal,
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //equal,
@@ -393,7 +393,8 @@ pub const Parser = struct {
         try self.namedVariable(&self.previous, can_assign);
     }
 
-    fn binary(self: *Self) !void {
+    fn binary(self: *Self, can_assign: bool) !void {
+        _ = can_assign;
         const op = self.previous.typ;
         const rule = rules[@enumToInt(op)];
         try self.parsePrecedence(@intToEnum(Precedence, @enumToInt(rule.precedence) + 1));
@@ -412,6 +413,18 @@ pub const Parser = struct {
         }
     }
 
+    fn dot(self: *Self, can_assign: bool) !void {
+        try self.consume(.identifier, "Expected property name after '.'");
+        const name = try self.identifierConstant(&self.previous);
+
+        if (can_assign and (try self.match(.equal))) {
+            try self.expression();
+            try self.emit(&.{ @enumToInt(OpCode.set_property), name });
+        } else {
+            try self.emit(&.{ @enumToInt(OpCode.get_property), name });
+        }
+    }
+
     fn parsePrecedence(self: *Self, precedence: Precedence) !void {
         try self.advance();
         const rule = rules[@enumToInt(self.previous.typ)].prefix;
@@ -426,7 +439,7 @@ pub const Parser = struct {
         while (@enumToInt(precedence) <= @enumToInt(rules[@enumToInt(self.current.typ)].precedence)) {
             try self.advance();
             const infix_rule = rules[@enumToInt(self.previous.typ)].infix;
-            try infix_rule.?(self);
+            try infix_rule.?(self, can_assign);
         }
 
         if (can_assign and try self.match(.equal))
@@ -464,7 +477,8 @@ pub const Parser = struct {
         return arg_count;
     }
 
-    fn call(self: *Self) !void {
+    fn call(self: *Self, can_assign: bool) !void {
+        _ = can_assign;
         const arg_count = try self.argumentList();
         try self.emit(&.{ @enumToInt(OpCode.call), arg_count });
     }
