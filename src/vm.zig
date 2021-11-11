@@ -308,6 +308,8 @@ pub const Vm = struct {
 
     open_upvalues: ?*memory.Upvalue,
 
+    init_string: *memory.String,
+
     const Self = @This();
     // TODO: be cleverer
     pub const Error = anyerror; //if (DEBUG_TRACE_EXECUTION) anyerror else InterpretError;
@@ -321,6 +323,7 @@ pub const Vm = struct {
             .frames = undefined,
             .frame_count = 0,
             .open_upvalues = null,
+            .init_string = (try allocator.allocString("init")).toString(),
         };
         return self;
     }
@@ -444,8 +447,13 @@ pub const Vm = struct {
                 .class => {
                     const class = callee.object.toClass();
                     const instance = try self.allocator.newInstance(class);
-                    self.stack.top -= arg_count + 1;
-                    self.stack.push(.{ .object = &instance.base });
+                    (self.stack.top -arg_count - 1)[0] = .{ .object = &instance.base };
+                    if (class.methods.find(self.init_string)) |e| {
+                        try self.call(e.value.object.toClosure(), arg_count);
+                    } else if (arg_count != 0) {
+                        try self.runtimeError("Expected 0 arguments but got {}", .{arg_count});
+                        return error.runtime_error;
+                    }
                     return;
                 },
                 .bound_method => {

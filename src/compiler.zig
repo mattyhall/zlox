@@ -65,7 +65,7 @@ const Jmp = struct {
     }
 };
 
-pub const FunctionType = enum { function, script, method };
+pub const FunctionType = enum { function, script, method, initialiser };
 
 pub const Parser = struct {
     allocator: *memory.ObjectAllocator,
@@ -274,6 +274,11 @@ pub const Parser = struct {
     }
 
     fn emitReturn(self: *Self) !void {
+        if (self.function_type == .initialiser) {
+            try self.emit(&.{ @enumToInt(OpCode.get_local), 0 });
+        } else {
+            try self.emit(&.{@enumToInt(OpCode.nil)});
+        }
         try self.emit(&.{@enumToInt(OpCode.ret)});
     }
 
@@ -768,7 +773,7 @@ pub const Parser = struct {
         try self.consume(.identifier, "Expect method name");
         const c = try self.identifierConstant(&self.previous);
 
-        const typ = .method;
+        var typ: FunctionType = if (std.mem.eql(u8, self.previous.loc.?, "init")) .initialiser else .method;
         try self.func(typ);
 
         try self.emit(&.{ @enumToInt(OpCode.method), c });
@@ -823,7 +828,7 @@ pub const Parser = struct {
         if (self.had_error)
             return null;
 
-        try self.emit(&.{ @enumToInt(OpCode.nil), @enumToInt(OpCode.ret) });
+        try self.emitReturn();
 
         return self.function;
     }

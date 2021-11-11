@@ -418,6 +418,8 @@ pub const ObjectAllocator = struct {
             while (upval != null) : (upval = upval.?.next) {
                 self.markObject(&upval.?.base);
             }
+
+            self.markObject(&machine.init_string.base);
         }
 
         if (self.compiler) |c| {
