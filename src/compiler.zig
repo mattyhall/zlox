@@ -433,6 +433,9 @@ pub const Parser = struct {
         if (can_assign and (try self.match(.equal))) {
             try self.expression();
             try self.emit(&.{ @enumToInt(OpCode.set_property), name });
+        } else if (try self.match(.left_paren)) {
+          const arg_count = try self.argumentList();
+          try self.emit(&.{ @enumToInt(OpCode.invoke), name, arg_count });
         } else {
             try self.emit(&.{ @enumToInt(OpCode.get_property), name });
         }

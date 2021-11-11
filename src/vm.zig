@@ -44,6 +44,7 @@ pub const OpCode = enum(u8) {
     get_property,
     set_property,
     method,
+    invoke,
 };
 
 const LineInfo = struct {
@@ -186,6 +187,16 @@ pub const Chunk = struct {
         return offset + 3;
     }
 
+    fn disassembleInvokeInstruction(self: *const Self, stdout: anytype, offset: usize) !usize {
+        const constant = self.code.data[offset + 1];
+        const val = self.values.data[constant];
+        const arg_count = self.code.data[offset + 2];
+        try stdout.print(" {s:<5} ({} args) c{} (", .{ "INVK", arg_count, constant });
+        try val.print(stdout);
+        try stdout.print(")\n", .{});
+        return offset + 3;
+    }
+
     fn disassembleInstruction(self: *const Self, stdout: anytype, offset: usize, line: LineDissasemble) !usize {
         try stdout.print("{x:0>4} ", .{offset});
         switch (line) {
@@ -232,6 +243,7 @@ pub const Chunk = struct {
             .jump_false,
             .jump,
             => return self.disassembleJump(stdout, offset, instruction, .forward),
+            .invoke => return self.disassembleInvokeInstruction(stdout, offset),
             .loop => return self.disassembleJump(stdout, offset, instruction, .back),
             .closure => {
                 const index = self.code.data[offset + 1];
@@ -447,7 +459,7 @@ pub const Vm = struct {
                 .class => {
                     const class = callee.object.toClass();
                     const instance = try self.allocator.newInstance(class);
-                    (self.stack.top -arg_count - 1)[0] = .{ .object = &instance.base };
+                    (self.stack.top - arg_count - 1)[0] = .{ .object = &instance.base };
                     if (class.methods.find(self.init_string)) |e| {
                         try self.call(e.value.object.toClosure(), arg_count);
                     } else if (arg_count != 0) {
@@ -533,6 +545,24 @@ pub const Vm = struct {
 
         // TODO: print line number
         self.reset();
+    }
+
+    fn invoke(self: *Self, name: *memory.String, arg_count: u8) !void {
+        const recv = self.stack.peek(arg_count);
+        if (recv != .object or recv.object.typ != .instance) {
+            try self.runtimeError("Only instances have methods", .{});
+            return error.runtime_error;
+        }
+        const instance = recv.object.toInstance();
+        return self.invokeFromClass(instance.class, name, arg_count);
+    }
+
+    fn invokeFromClass(self: *Self, class: *memory.Class, name: *memory.String, arg_count: u8) !void {
+        if (class.methods.find(name)) |e| {
+            return self.call(e.value.object.toClosure(), arg_count);
+        }
+        try self.runtimeError("Undefined property {s}", .{name.chars});
+        return error.runtime_error;
     }
 
     fn run(self: *Self) Error!Value {
@@ -710,6 +740,13 @@ pub const Vm = struct {
                 .method => {
                     const name = chunk.values.data[self.readByte(frame)].object.toString();
                     try self.defineMethod(name);
+                },
+                .invoke => {
+                    const method = chunk.values.data[self.readByte(frame)].object.toString();
+                    const arg_count = self.readByte(frame);
+                    try self.invoke(method, arg_count);
+                    frame = &self.frames[self.frame_count - 1];
+                    chunk = frame.closure.function.chunk;
                 },
             }
             first = false;
