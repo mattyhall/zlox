@@ -450,6 +450,7 @@ pub const Vm = struct {
                 },
                 .bound_method => {
                     const bound = callee.object.toBoundMethod();
+                    (self.stack.top - arg_count - 1)[0] = bound.recv;
                     try self.call(bound.method, arg_count);
                     return;
                 },

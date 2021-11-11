@@ -131,7 +131,7 @@ pub const Parser = struct {
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //print,
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //return_,
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //super,
-        .{ .prefix = null,     .infix = null,   .precedence = .none },     //this,
+        .{ .prefix = this,     .infix = null,   .precedence = .none },     //this,
         .{ .prefix = literal,  .infix = null,   .precedence = .none },     //true_,
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //var_,
         .{ .prefix = null,     .infix = null,   .precedence = .none },     //while_,
@@ -161,7 +161,11 @@ pub const Parser = struct {
 
         var local = &self.locals.locals[0];
         local.depth = 0;
-        local.name.loc = "";
+        if (function_type != .function) {
+            local.name.loc = "this";
+        } else {
+            local.name.loc = "";
+        }
         local.captured = false;
         self.locals.count += 1;
 
@@ -194,7 +198,11 @@ pub const Parser = struct {
 
         var local = &self.locals.locals[0];
         local.depth = 0;
-        local.name.loc = "";
+        if (function_type != .function) {
+            local.name.loc = "this";
+        } else {
+            local.name.loc = "";
+        }
         self.locals.count += 1;
 
         return self;
@@ -423,6 +431,11 @@ pub const Parser = struct {
         } else {
             try self.emit(&.{ @enumToInt(OpCode.get_property), name });
         }
+    }
+
+    fn this(self: *Self, can_assign: bool) !void {
+        _ = can_assign;
+        try self.variable(false);
     }
 
     fn parsePrecedence(self: *Self, precedence: Precedence) !void {

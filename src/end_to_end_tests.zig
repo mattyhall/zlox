@@ -390,6 +390,29 @@ test "class fields/methods" {
         \\ var a = A();
         \\ return a.add(30, 12);
     ));
+    try std.testing.expectEqual(Value{ .number = 42 }, run(&alloc,
+        \\ class AddN {
+        \\   add(a) {
+        \\     return a + this.n;
+        \\   }
+        \\ }
+        \\ var a = AddN();
+        \\ a.n = 30;
+        \\ return a.add(12);
+    ));
+    try std.testing.expectEqual(Value{ .number = 42 }, run(&alloc,
+        \\ class AddN {
+        \\   add(a) {
+        \\     fun inner() {
+        \\       return a + this.n;
+        \\     }
+        \\     return inner();
+        \\   }
+        \\ }
+        \\ var a = AddN();
+        \\ a.n = 30;
+        \\ return a.add(12);
+    ));
 
     try fails(&alloc,
         \\ class A {};
@@ -397,6 +420,12 @@ test "class fields/methods" {
     );
     try fails(&alloc,
         \\ class A {};
+        \\ return a.foo();
+    );
+    try fails(&alloc,
+        \\ class A {
+        \\   foo(a) {}
+        \\ }
         \\ return a.foo();
     );
 }
