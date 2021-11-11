@@ -29,6 +29,7 @@ pub const ObjectType = enum {
     upvalue,
     class,
     instance,
+    bound_method,
 };
 
 pub const Object = struct {
@@ -70,6 +71,10 @@ pub const Object = struct {
         return @fieldParentPtr(Instance, "base", self);
     }
 
+    pub fn toBoundMethod(self: *Self) *BoundMethod {
+        return @fieldParentPtr(BoundMethod, "base", self);
+    }
+
     pub fn deinit(self: *Self, allocator: *ObjectAllocator) void {
         if (DEBUG_LOG_GC) {
             std.log.debug("0x{X} free {a}", .{ @ptrToInt(self), self.typ });
@@ -103,12 +108,18 @@ pub const Object = struct {
             },
             .class => {
                 allocator.bytes_allocated -= @sizeOf(Class);
-                allocator.allocator.destroy(self.toClass());
+                const class = self.toClass();
+                class.methods.deinit();
+                allocator.allocator.destroy(class);
             },
             .instance => {
                 allocator.bytes_allocated -= @sizeOf(Instance);
                 self.toInstance().fields.deinit();
                 allocator.allocator.destroy(self.toInstance());
+            },
+            .bound_method => {
+                allocator.bytes_allocated -= @sizeOf(BoundMethod);
+                allocator.allocator.destroy(self.toBoundMethod());
             },
         }
     }
@@ -151,12 +162,19 @@ pub const Upvalue = struct {
 pub const Class = struct {
     base: Object,
     name: *String,
+    methods: Table,
 };
 
 pub const Instance = struct {
     base: Object,
     class: *Class,
     fields: Table,
+};
+
+pub const BoundMethod = struct {
+    base: Object,
+    recv: Value,
+    method: *Closure,
 };
 
 pub const ObjectAllocator = struct {
@@ -338,6 +356,7 @@ pub const ObjectAllocator = struct {
         c.base.typ = .class;
         c.base.marked = false;
         c.name = name;
+        c.methods = try Table.init(self.allocator);
         self.addObject(&c.base);
         return c;
     }
@@ -351,6 +370,17 @@ pub const ObjectAllocator = struct {
         i.fields = try Table.init(self.allocator);
         self.addObject(&i.base);
         return i;
+    }
+
+    pub fn newBoundMethod(self: *Self, recv: Value, method: *Closure) !*BoundMethod {
+        const m = try self.create(BoundMethod);
+        m.base.next = null;
+        m.base.typ = .bound_method;
+        m.base.marked = false;
+        m.recv = recv;
+        m.method = method;
+        self.addObject(&m.base);
+        return m;
     }
 
     fn collectGarbage(self: *Self) void {
@@ -464,11 +494,17 @@ pub const ObjectAllocator = struct {
             .class => {
                 const c = obj.toClass();
                 self.markObject(&c.name.base);
+                self.markTable(&c.methods);
             },
             .instance => {
                 const i = obj.toInstance();
                 self.markObject(&i.class.base);
                 self.markTable(&i.fields);
+            },
+            .bound_method => {
+                const m = obj.toBoundMethod();
+                self.markObject(&m.method.base);
+                self.markValue(m.recv);
             },
         }
     }
@@ -542,6 +578,7 @@ pub const Value = union(Type) {
                 .upvalue => try writer.print("upvalue", .{}),
                 .class => try writer.print("<class {s}>", .{o.toClass().name.chars}),
                 .instance => try writer.print("{s} instance", .{o.toInstance().class.name.chars}),
+                .bound_method => try writer.print("<fn {s}>", .{(o.toBoundMethod().method.function.name orelse unreachable).chars}),
             },
         }
     }

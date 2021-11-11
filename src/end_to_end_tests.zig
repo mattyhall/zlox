@@ -369,7 +369,7 @@ test "closure" {
     ));
 }
 
-test "class fields" {
+test "class fields/methods" {
     var alloc = try memory.ObjectAllocator.init(std.testing.allocator);
     defer alloc.deinit();
 
@@ -381,4 +381,22 @@ test "class fields" {
         \\ a.b.c = 42;
         \\ return a.b.c;
     ));
+    try std.testing.expectEqual(Value{ .number = 42 }, run(&alloc,
+        \\ class A {
+        \\   add(a, b) {
+        \\     return a + b;
+        \\   }
+        \\ }
+        \\ var a = A();
+        \\ return a.add(30, 12);
+    ));
+
+    try fails(&alloc,
+        \\ class A {};
+        \\ return a.foo;
+    );
+    try fails(&alloc,
+        \\ class A {};
+        \\ return a.foo();
+    );
 }

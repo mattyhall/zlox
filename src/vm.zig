@@ -43,6 +43,7 @@ pub const OpCode = enum(u8) {
     class,
     get_property,
     set_property,
+    method,
 };
 
 const LineInfo = struct {
@@ -140,6 +141,7 @@ pub const Chunk = struct {
             .class => "CLASS",
             .get_property => "GETP",
             .set_property => "SETP",
+            .method => "MTHD",
             else => unreachable,
         };
         try stdout.print(" {s:<5} c{} (", .{ s, index });
@@ -219,6 +221,7 @@ pub const Chunk = struct {
             .class,
             .get_property,
             .set_property,
+            .method,
             => return self.disassembleConstantInstruction(stdout, offset, instruction),
             .get_local,
             .set_local,
@@ -390,6 +393,7 @@ pub const Vm = struct {
                         .closure => false,
                         .upvalue => unreachable,
                         .class => false,
+                        .bound_method => false,
                     },
                 },
             });
@@ -444,6 +448,11 @@ pub const Vm = struct {
                     self.stack.push(.{ .object = &instance.base });
                     return;
                 },
+                .bound_method => {
+                    const bound = callee.object.toBoundMethod();
+                    try self.call(bound.method, arg_count);
+                    return;
+                },
                 else => {},
             }
         }
@@ -489,6 +498,23 @@ pub const Vm = struct {
 
         _ = self.stack.pop();
         _ = self.stack.pop();
+    }
+
+    fn defineMethod(self: *Self, name: *memory.String) !void {
+        const method = self.stack.peek(0);
+        const class = self.stack.peek(1).object.toClass();
+        _ = try class.methods.insert(name, method);
+        _ = self.stack.pop();
+    }
+
+    fn bindMethod(self: *Self, class: *memory.Class, name: *memory.String) !void {
+        const entry = class.methods.find(name) orelse {
+            try self.runtimeError("Undefined property '{s}'", .{name.chars});
+            return error.runtime_error;
+        };
+        const method = try self.allocator.newBoundMethod(self.stack.peek(0), entry.value.object.toClosure());
+        _ = self.stack.pop();
+        self.stack.push(.{ .object = &method.base });
     }
 
     fn runtimeError(self: *Self, comptime fmt: []const u8, args: anytype) !void {
@@ -661,8 +687,7 @@ pub const Vm = struct {
                         _ = self.stack.pop(); // instance
                         self.stack.push(e.value);
                     } else {
-                      try self.runtimeError("Undefined property '{s}'", .{name.chars});
-                      return error.runtime_error;
+                        try self.bindMethod(instance.class, name);
                     }
                 },
                 .set_property => {
@@ -672,6 +697,10 @@ pub const Vm = struct {
                     const v = self.stack.pop();
                     _ = self.stack.pop(); // Instance
                     self.stack.push(v);
+                },
+                .method => {
+                    const name = chunk.values.data[self.readByte(frame)].object.toString();
+                    try self.defineMethod(name);
                 },
             }
             first = false;

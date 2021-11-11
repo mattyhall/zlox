@@ -65,7 +65,7 @@ const Jmp = struct {
     }
 };
 
-pub const FunctionType = enum { function, script };
+pub const FunctionType = enum { function, script, method };
 
 pub const Parser = struct {
     allocator: *memory.ObjectAllocator,
@@ -751,16 +751,34 @@ pub const Parser = struct {
         try self.defineVariable(global);
     }
 
+    fn method(self: *Self) !void {
+        try self.consume(.identifier, "Expect method name");
+        const c = try self.identifierConstant(&self.previous);
+
+        const typ = .method;
+        try self.func(typ);
+
+        try self.emit(&.{ @enumToInt(OpCode.method), c });
+    }
+
     fn classDeclaration(self: *Self) !void {
         try self.consume(.identifier, "Expect class name");
-        const name = try self.identifierConstant(&self.previous);
+        const name = self.previous;
+        const name_const = try self.identifierConstant(&self.previous);
         try self.declareVariable();
 
-        try self.emit(&.{ @enumToInt(OpCode.class), name });
-        try self.defineVariable(name);
+        try self.emit(&.{ @enumToInt(OpCode.class), name_const });
+        try self.defineVariable(name_const);
+        try self.namedVariable(&name, false);
 
         try self.consume(.left_brace, "Expect '{' before class body");
+
+        while (!self.check(.right_brace) and !self.check(.eof)) {
+            try self.method();
+        }
+
         try self.consume(.right_brace, "Expect '}' after class body");
+        try self.emit(&.{@enumToInt(OpCode.pop)});
     }
 
     fn synchronise(self: *Self) !void {
