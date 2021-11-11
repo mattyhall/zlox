@@ -554,6 +554,10 @@ pub const Vm = struct {
             return error.runtime_error;
         }
         const instance = recv.object.toInstance();
+        if (instance.fields.find(name)) |e| {
+            (self.stack.top - arg_count - 1)[0] = e.value;
+            return self.callValue(e.value, arg_count);
+        }
         return self.invokeFromClass(instance.class, name, arg_count);
     }
 

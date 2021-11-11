@@ -425,6 +425,18 @@ test "class fields/methods" {
         \\ var a = AddN(30);
         \\ return a.add(12);
     ));
+    try std.testing.expectEqual(Value{ .number = 42 }, run(&alloc,
+        \\ class AddN {
+        \\   init() {
+        \\     fun add(a, b) {
+        \\       return a + b;
+        \\     }
+        \\     this.add = add;
+        \\   }
+        \\ }
+        \\ var a = AddN();
+        \\ return a.add(30, 12);
+    ));
 
     try fails(&alloc,
         \\ class A {};
