@@ -21,38 +21,7 @@ pub fn main() anyerror!void {
         \\   if (n < 2) return n;
         \\   return fib(n-1) + fib(n-2);
         \\ }
-        \\ var start = clock();
-        \\ print fib(5);
-        \\ print clock() - start;
-    ;
-
-    src =
-        \\ fun outer(n) {
-        \\   var limit = n;
-        \\   fun inner() {
-        \\     var res = "";
-        \\     for (var i = 0; i < limit; i = i + 1) {
-        \\       res = res + "hi";
-        \\     }
-        \\     limit = limit + 1;
-        \\     return res;
-        \\   }
-        \\   return inner;
-        \\ }
-        \\ var inner = outer(1);
-        \\ print inner();
-    ;
-
-    src =
-        \\ {
-        \\   var res;
-        \\   var adjective = "good";
-        \\   {
-        \\     var time_of_day = "morning";
-        \\     res = adjective + " " + time_of_day;
-        \\   }
-        \\   return res;
-        \\ }
+        \\ print fib(33);
     ;
 
     if (false) {
@@ -69,7 +38,7 @@ pub fn main() anyerror!void {
 
     var parser = try Parser.init(&obj_allocator, src, .script);
     const func = (try parser.compile()) orelse unreachable;
-    try func.chunk.disassemble("script");
+    // try func.chunk.disassemble("script");
 
     var v = try vm.Vm.init(&obj_allocator);
     defer v.deinit();

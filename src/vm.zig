@@ -66,13 +66,13 @@ pub const Chunk = struct {
     values: ds.DynamicArray(Value),
     lines: ds.DynamicArray(LineInfo),
 
-    allocator: *Allocator,
+    allocator: Allocator,
 
     const Self = @This();
 
     const LineDissasemble = union(enum) { new: usize, old };
 
-    pub fn init(allocator: *Allocator) Self {
+    pub fn init(allocator: Allocator) Self {
         return Self{
             .allocator = allocator,
             .code = ds.DynamicArray(u8).init(allocator),

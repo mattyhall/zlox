@@ -10,7 +10,7 @@ const DynamicArray = ds.DynamicArray;
 pub const FLOAT_PRECISION = 6;
 
 const DEBUG_STRESS_GC = false;
-const DEBUG_LOG_GC = true;
+const DEBUG_LOG_GC = false;
 
 const GC_HEAP_GROW_FACTOR: usize = 2;
 
@@ -77,7 +77,7 @@ pub const Object = struct {
 
     pub fn deinit(self: *Self, allocator: *ObjectAllocator) void {
         if (DEBUG_LOG_GC) {
-            std.log.debug("0x{X} free {a}", .{ @ptrToInt(self), self.typ });
+            std.log.debug("0x{X} free {}", .{ @ptrToInt(self), self.typ });
         }
         switch (self.typ) {
             .string => {
@@ -145,7 +145,7 @@ pub const Closure = struct {
     upvalues: DynamicArray(*Upvalue),
 };
 
-pub const NativeFn = fn (arg_count: u8, args: [*]Value) Value;
+pub const NativeFn = *const fn (arg_count: u8, args: [*]Value) Value;
 
 pub const Native = struct {
     base: Object,
@@ -178,7 +178,7 @@ pub const BoundMethod = struct {
 };
 
 pub const ObjectAllocator = struct {
-    allocator: *Allocator,
+    allocator: Allocator,
     string_interner: Table,
     obj: ?*Object,
     vm: ?*vm.Vm,
@@ -189,7 +189,7 @@ pub const ObjectAllocator = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: *Allocator) !Self {
+    pub fn init(allocator: Allocator) !Self {
         return Self{
             .allocator = allocator,
             .obj = null,

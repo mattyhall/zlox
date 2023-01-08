@@ -28,11 +28,11 @@ pub fn DynamicArray(comptime T: type) type {
         count: usize,
         capacity: usize,
 
-        allocator: *Allocator,
+        allocator: Allocator,
 
         const Self = @This();
 
-        pub fn init(allocator: *Allocator) Self {
+        pub fn init(allocator: Allocator) Self {
             return Self{
                 .allocator = allocator,
                 // Need an aligned address so chose 64
@@ -144,13 +144,13 @@ pub const Entry = struct {
 };
 
 pub const Table = struct {
-    allocator: *Allocator,
+    allocator: Allocator,
     count: usize,
     buckets: []Entry,
 
     const Self = @This();
 
-    pub fn init(allocator: *Allocator) !Self {
+    pub fn init(allocator: Allocator) !Self {
         var buckets = try allocator.alloc(Entry, INITIAL_TABLE_CAPACITY);
         for (buckets) |*entry| {
             entry.key = null;

@@ -90,8 +90,8 @@ pub const Parser = struct {
     const Self = @This();
 
     const ParseRule = struct {
-        prefix: ?fn (self: *Self, can_assign: bool) anyerror!void,
-        infix: ?fn (self: *Self, can_assign: bool) anyerror!void,
+        prefix: ?*const fn (self: *Self, can_assign: bool) anyerror!void,
+        infix: ?*const fn (self: *Self, can_assign: bool) anyerror!void,
         precedence: Precedence,
     };
 
@@ -223,7 +223,7 @@ pub const Parser = struct {
         } else if (tok.typ == .err) {
             // Nothing
         } else {
-            try stderr.print(" at {s}", .{tok.loc});
+            try stderr.print(" at {s}", .{tok.loc orelse ""});
         }
 
         try stderr.print(": {s}", .{msg});
@@ -434,8 +434,8 @@ pub const Parser = struct {
             try self.expression();
             try self.emit(&.{ @enumToInt(OpCode.set_property), name });
         } else if (try self.match(.left_paren)) {
-          const arg_count = try self.argumentList();
-          try self.emit(&.{ @enumToInt(OpCode.invoke), name, arg_count });
+            const arg_count = try self.argumentList();
+            try self.emit(&.{ @enumToInt(OpCode.invoke), name, arg_count });
         } else {
             try self.emit(&.{ @enumToInt(OpCode.get_property), name });
         }
@@ -448,7 +448,7 @@ pub const Parser = struct {
 
     fn parsePrecedence(self: *Self, precedence: Precedence) !void {
         try self.advance();
-        const rule = rules[@enumToInt(self.previous.typ)].prefix;
+        var rule = rules[@enumToInt(self.previous.typ)].prefix;
         if (rule == null) {
             try self.err("Expect expression");
             return;
