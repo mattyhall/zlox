@@ -7,8 +7,22 @@ const memory = @import("memory.zig");
 
 const Allocator = std.mem.Allocator;
 
+fn readFile(gpa: std.mem.Allocator, path: []const u8) ![]const u8 {
+    var abs_path = if (std.fs.path.isAbsolute(path))
+        try gpa.dupe(u8, path)
+    else
+        try std.fs.cwd().realpathAlloc(gpa, path);
+
+    defer gpa.free(abs_path);
+
+    var f = try std.fs.openFileAbsolute(abs_path, .{});
+    defer f.close();
+
+    return try f.reader().readAllAlloc(gpa, 10 * 1024 * 1024);
+}
+
 pub fn main() anyerror!void {
-    const allocator = std.heap.c_allocator;
+    const allocator = std.heap.page_allocator;
 
     var obj_allocator = try memory.ObjectAllocator.init(allocator);
     defer obj_allocator.deinit();
@@ -16,13 +30,7 @@ pub fn main() anyerror!void {
     var table = try ds.Table.init(allocator);
     defer table.deinit();
 
-    var src: []const u8 =
-        \\ fun fib(n) {
-        \\   if (n < 2) return n;
-        \\   return fib(n-1) + fib(n-2);
-        \\ }
-        \\ print fib(33);
-    ;
+    var src = try readFile(allocator, std.mem.span(std.os.argv[1]));
 
     if (false) {
         std.log.debug("{s}", .{src});
